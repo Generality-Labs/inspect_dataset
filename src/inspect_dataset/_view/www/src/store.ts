@@ -1,12 +1,28 @@
 import { create } from "zustand";
-import type { DatasetInfo, Finding, Sample, Summary, TriageStatus } from "./types";
-import { fetchDatasets, fetchFindings, fetchSamples, fetchSummary, postTriage } from "./api";
+import type {
+  DatasetInfo,
+  ExplorerSession,
+  Finding,
+  Sample,
+  SchemaInfo,
+  Summary,
+  TriageStatus,
+} from "./types";
+import {
+  fetchDatasets,
+  fetchExplorerSchema,
+  fetchFindings,
+  fetchSamples,
+  fetchSummary,
+  loadExplorerSession,
+  postTriage,
+} from "./api";
 
 interface AppState {
   // Dataset list (loaded once on startup)
   datasets: DatasetInfo[];
 
-  // Currently viewed dataset
+  // Currently viewed dataset (findings mode)
   currentSlug: string | null;
   summary: Summary | null;
   findings: Finding[];
@@ -17,11 +33,24 @@ interface AppState {
   // UI state
   selectedFinding: Finding | null;
 
+  // Explorer session state
+  explorerSession: ExplorerSession | null;
+  explorerSchema: SchemaInfo | null;
+  explorerLoading: boolean;
+  explorerError: string | null;
+
   // Actions
   setSelectedFinding: (finding: Finding | null) => void;
   loadDatasets: () => Promise<void>;
   loadDataset: (slug: string) => Promise<void>;
   triageFinding: (findingId: number, status: TriageStatus) => Promise<void>;
+  startExplorerSession: (
+    source: string,
+    sourceType: "hf" | "inspect_task",
+    split: string,
+    limit?: number,
+  ) => Promise<ExplorerSession | null>;
+  clearExplorerSession: () => void;
 }
 
 export const useStore = create<AppState>((set, get) => ({
@@ -35,7 +64,28 @@ export const useStore = create<AppState>((set, get) => ({
 
   selectedFinding: null,
 
+  explorerSession: null,
+  explorerSchema: null,
+  explorerLoading: false,
+  explorerError: null,
+
   setSelectedFinding: (finding) => set({ selectedFinding: finding }),
+
+  startExplorerSession: async (source, sourceType, split, limit) => {
+    set({ explorerLoading: true, explorerError: null, explorerSession: null, explorerSchema: null });
+    try {
+      const session = await loadExplorerSession(source, sourceType, split, limit);
+      const schema = await fetchExplorerSchema(session.session_id);
+      set({ explorerSession: session, explorerSchema: schema, explorerLoading: false });
+      return session;
+    } catch (e) {
+      set({ explorerError: String(e), explorerLoading: false });
+      return null;
+    }
+  },
+
+  clearExplorerSession: () =>
+    set({ explorerSession: null, explorerSchema: null, explorerError: null }),
 
   loadDatasets: async () => {
     try {
