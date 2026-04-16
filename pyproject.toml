@@ -13,6 +13,7 @@ dependencies = [
     "python-dotenv>=1.0",
     "rich>=13.0",
     "datasets>=2.0",
+    "openai>=2.30.0",
 ]
 
 [project.scripts]
@@ -44,6 +45,9 @@ disallow_incomplete_defs = false
 check_untyped_defs = false
 warn_unused_ignores = false
 disable_error_code = ["type-arg", "arg-type"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
 
 [dependency-groups]
 dev = [
