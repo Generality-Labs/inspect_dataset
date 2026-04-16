@@ -604,6 +604,20 @@ This is a significant expansion of the UI. Rough phasing:
 5. **v0.4.4 — Export + shareable reports**: static HTML export, filtered
    subset download
 
+### User Stories (backlog)
+
+Quick-fire ideas to pick up as time allows — not yet assigned to a version.
+
+- [ ] AAU, when I view a dataset grid, I can easily switch between each row being a single line with truncated text to each row being tall enough to show its full text (within a reasonable limit)
+- [ ] AAU, when I view the explorer, I can change between dark and light themes
+- [ ] AAU, when I click on an image thumbnail in the record sidebar, I see the image in a lightbox
+- [ ] AAU, when I go to the homepage, the list of cached HF datasets should load within 1 second
+- [ ] AAU, when I view a dataset grid, I can see which split I'm viewing and easily switch between available splits
+- [ ] AAU, when I go to the homepage, the list of datasets take up available vertical space
+- [ ] AAU, when I view a dataset grid that includes references images, the images should be shown in the record sidebar. Example: inspect_evals/zerobench, `question_images: ["images/74_0.png"]`
+- [ ] AAU, when I view a HF dataset grid, the schema view should include the raw json of the schema for debugging purposes
+- [ ] AAU, when I view a HF dataset grid, the record sidebar should include the type of each field from the schema
+
 ### v0.5 — Eval-informed scanners (inspect-scout integration, planned)
 
 - [ ] `universal_failure` — all models fail → bad label candidate
