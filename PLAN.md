@@ -5,7 +5,7 @@ A dataset quality scanner for AI evaluation datasets. Companion to
 agent trajectories — inspect-dataset scans the underlying datasets themselves.
 
 **Organisation:** Arcadia  
-**Status:** v0.3.4 complete
+**Status:** v0.4.0 in progress
 
 ---
 
@@ -434,7 +434,7 @@ results are always persisted without requiring an explicit flag.
 - [x] Ensure `findings/` parent is created if it doesn't exist (already handled
   by `save_findings` → `output_dir.mkdir(parents=True, exist_ok=True)`)
 
-### v0.4 — Dataset Explorer & Scanner Workbench (planned)
+### v0.4 — Dataset Explorer & Scanner Workbench (in progress)
 
 The v0.3 UI was built as a findings viewer — it requires a pre-existing scan
 output directory and is oriented around triaging findings. This phase reimagines
@@ -593,8 +593,11 @@ HTML file.
 
 This is a significant expansion of the UI. Rough phasing:
 
-1. **v0.4.0 — Dataset picker + direct loading**: home screen lists cached HF
-   datasets and installed inspect tasks; HF search bar; load without prior scan
+1. **v0.4.0 — Dataset picker + direct loading** ✓: home screen lists cached HF
+   datasets and installed inspect tasks; direct entry tab; load without prior
+   scan; HF API split detection; explorer session management; AG Grid data
+   table with paginated records; record detail sidebar with image rendering;
+   HuggingFace link in navbar; visible placeholders for null/empty values
 2. **v0.4.1 — Schema panel + rich rendering**: dataset overview statistics;
    intelligent field rendering in sample detail
 3. **v0.4.2 — Scanner workbench**: run scanners from UI; scope to
