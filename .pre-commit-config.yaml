@@ -82,6 +82,16 @@ repos:
         entry: prettier --write
         files: ^src/inspect_dataset/_view/www/.*\.(ts|tsx|css|html|js)$
 
+      # eslint needs the frontend's own node_modules (flat config imports its
+      # plugins), so run it in-place via npm; install from the lockfile first
+      # when node_modules is missing (e.g. fresh CI runner).
+      - id: eslint
+        name: eslint (viewer frontend)
+        language: system
+        entry: bash -c 'cd src/inspect_dataset/_view/www && { [ -d node_modules ] || npm ci --silent --no-audit --no-fund; } && npx eslint .'
+        pass_filenames: false
+        files: ^src/inspect_dataset/_view/www/.*\.(ts|tsx|js)$
+
   - repo: https://github.com/executablebooks/mdformat
     rev: 82912cdaea4fb830f751504486a7879c70526547 # 1.0.0
     hooks:
