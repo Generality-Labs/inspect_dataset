@@ -27,18 +27,14 @@ def _scan(records: list[Record], fields: FieldMap) -> list[Finding]:
     mostly_lower = lower_count / total >= _MAJORITY_THRESHOLD
     mostly_upper_first = upper_first_count / total >= _MAJORITY_THRESHOLD
 
-    for i, (record, answer) in enumerate(zip(records, answers)):
+    for i, (record, answer) in enumerate(zip(records, answers, strict=True)):
         if not answer:
             continue
         issues = []
         if mostly_lower and answer != answer.lower():
-            issues.append(
-                f"majority of answers are lowercase but this is not: {answer!r}"
-            )
+            issues.append(f"majority of answers are lowercase but this is not: {answer!r}")
         elif mostly_upper_first and not answer[0].isupper():
-            issues.append(
-                f"majority of answers start with uppercase but this does not: {answer!r}"
-            )
+            issues.append(f"majority of answers start with uppercase but this does not: {answer!r}")
 
         if issues:
             findings.append(
@@ -60,7 +56,7 @@ def _scan(records: list[Record], fields: FieldMap) -> list[Finding]:
     mostly_punct = punct_count / total >= _MAJORITY_THRESHOLD
     mostly_no_punct = (total - punct_count) / total >= _MAJORITY_THRESHOLD
 
-    for i, (record, answer) in enumerate(zip(records, answers)):
+    for i, (record, answer) in enumerate(zip(records, answers, strict=True)):
         if not answer:
             continue
         has_p = answer[-1] in ".!?" and not answer.endswith("etc.")
@@ -89,7 +85,7 @@ def _scan(records: list[Record], fields: FieldMap) -> list[Finding]:
     if len(word_counts) >= 2:
         stdev_wc = statistics.stdev(word_counts)
         threshold = mean_wc + _LENGTH_STDEV_MULTIPLIER * stdev_wc
-        for i, (record, answer) in enumerate(zip(records, answers)):
+        for i, (record, answer) in enumerate(zip(records, answers, strict=True)):
             if not answer:
                 continue
             wc = len(answer.split())

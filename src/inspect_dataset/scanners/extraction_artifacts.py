@@ -12,13 +12,13 @@ _ARTIFACT_NAMES = {
     "ﬄ": "ligature ffl (U+FB04)",
     "ﬅ": "ligature long-st (U+FB05)",
     "ﬆ": "ligature st (U+FB06)",
-    "­": "soft hyphen (U+00AD)",
-    "​": "zero-width space (U+200B)",
-    "‌": "zero-width non-joiner (U+200C)",
-    "‍": "zero-width joiner (U+200D)",
-    "⁠": "word joiner (U+2060)",
-    "﻿": "BOM / zero-width no-break space (U+FEFF)",
-    " ": "non-breaking space (U+00A0)",
+    "\u00ad": "soft hyphen (U+00AD)",
+    "\u200b": "zero-width space (U+200B)",
+    "\u200c": "zero-width non-joiner (U+200C)",
+    "\u200d": "zero-width joiner (U+200D)",
+    "\u2060": "word joiner (U+2060)",
+    "\ufeff": "BOM / zero-width no-break space (U+FEFF)",
+    "\u00a0": "non-breaking space (U+00A0)",
     "�": "replacement character (U+FFFD)",
 }
 
@@ -44,9 +44,7 @@ def _scan(records: list[Record], fields: FieldMap) -> list[Finding]:
                 continue
             offset_val = record.get("__md_body_offset__", 0)
             offset = offset_val if isinstance(offset_val, int) else 0
-            severity: Severity = (
-                "medium" if "replacement character (U+FFFD)" in found else "low"
-            )
+            severity: Severity = "medium" if "replacement character (U+FFFD)" in found else "low"
             summary = ", ".join(f"{name} x{n}" for name, n in sorted(found.items()))
             findings.append(
                 Finding(

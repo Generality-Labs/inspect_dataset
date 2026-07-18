@@ -28,7 +28,7 @@ def _mock_model(responses: list[str]) -> MagicMock:
     return model
 
 
-@pytest.fixture()
+@pytest.fixture
 def patch_get_model():
     with patch("inspect_dataset.scanners.ambiguity.get_model") as mock:
         yield mock
@@ -53,9 +53,7 @@ def test_ambiguous_question_flagged(patch_get_model):
 
 
 def test_clear_question_not_flagged(patch_get_model):
-    patch_get_model.return_value = _mock_model(
-        ["NO\nThis question is clear and unambiguous."]
-    )
+    patch_get_model.return_value = _mock_model(["NO\nThis question is clear and unambiguous."])
     from inspect_dataset.scanners.ambiguity import _make_scanner
 
     scanner = _make_scanner("fake-model")

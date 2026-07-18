@@ -36,9 +36,7 @@ def test_declared_scanners_list_takes_precedence(plugin_on_path):
 
 
 def test_attribute_scan_when_no_scanners_list(tmp_path):
-    (tmp_path / "attr_plugin.py").write_text(
-        PLUGIN.replace("SCANNERS = [my_check]", "")
-    )
+    (tmp_path / "attr_plugin.py").write_text(PLUGIN.replace("SCANNERS = [my_check]", ""))
     sys.path.insert(0, str(tmp_path))
     try:
         defs = _load_scanner_module("attr_plugin")

@@ -40,7 +40,7 @@ def test_line_number_reported():
 
 
 def test_body_offset_applied():
-    records = [{"q": "what?", "a": "bad text", "__md_body_offset__": 6}]
+    records = [{"q": "what?", "a": "bad\u00a0text", "__md_body_offset__": 6}]
     findings = extraction_artifacts(records, FIELDS)
     assert findings[0].line == 7
 

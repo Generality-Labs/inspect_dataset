@@ -51,8 +51,8 @@ class ScanRun:
     split: str | None
     total_samples: int
     findings: list[Finding]
-    source_type: str = "hf"        # "hf" | "inspect_task"
-    revision: str | None = None    # HF revision / commit SHA
+    source_type: str = "hf"  # "hf" | "inspect_task"
+    revision: str | None = None  # HF revision / commit SHA
 
     def by_scanner(self) -> dict[str, list[Finding]]:
         result: dict[str, list[Finding]] = {}

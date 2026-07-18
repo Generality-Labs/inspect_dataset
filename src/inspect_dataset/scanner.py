@@ -7,9 +7,7 @@ from typing import Any
 from inspect_dataset._types import FieldMap, Finding, Record, ScanRun
 
 DatasetScanner = Callable[[list[Record], FieldMap], list[Finding]]
-AsyncDatasetScanner = Callable[
-    [list[Record], FieldMap], Coroutine[Any, Any, list[Finding]]
-]
+AsyncDatasetScanner = Callable[[list[Record], FieldMap], Coroutine[Any, Any, list[Finding]]]
 
 
 class ScannerDef:
@@ -126,7 +124,7 @@ async def run_scanners_async(
     if async_scanners:
         tasks = [s(records, fields) for s in async_scanners]
         results = await asyncio.gather(*tasks)
-        for llm_scanner, findings in zip(async_scanners, results):
+        for llm_scanner, findings in zip(async_scanners, results, strict=True):
             for f in findings:
                 f.scanner = llm_scanner.name
             all_findings.extend(findings)

@@ -28,18 +28,16 @@ def _mock_model(responses: list[str]) -> MagicMock:
     return model
 
 
-@pytest.fixture()
+@pytest.fixture
 def patch_get_model():
-    with patch(
-        "inspect_dataset.scanners.answerability.get_model"
-    ) as mock:
+    with patch("inspect_dataset.scanners.answerability.get_model") as mock:
         yield mock
 
 
 def test_unanswerable_without_context_flagged(patch_get_model):
-    patch_get_model.return_value = _mock_model([
-        "YES\nThe question refers to 'this image' but no image is provided."
-    ])
+    patch_get_model.return_value = _mock_model(
+        ["YES\nThe question refers to 'this image' but no image is provided."]
+    )
     from inspect_dataset.scanners.answerability import _make_scanner
 
     scanner = _make_scanner("fake-model")
@@ -54,9 +52,7 @@ def test_unanswerable_without_context_flagged(patch_get_model):
 
 
 def test_answerable_standalone_not_flagged(patch_get_model):
-    patch_get_model.return_value = _mock_model([
-        "NO\nThis is a general knowledge question."
-    ])
+    patch_get_model.return_value = _mock_model(["NO\nThis is a general knowledge question."])
     from inspect_dataset.scanners.answerability import _make_scanner
 
     scanner = _make_scanner("fake-model")
@@ -66,17 +62,19 @@ def test_answerable_standalone_not_flagged(patch_get_model):
 
 
 def test_unanswerable_with_context_flagged(patch_get_model):
-    patch_get_model.return_value = _mock_model([
-        "YES\nThe context discusses weather, not geography."
-    ])
+    patch_get_model.return_value = _mock_model(
+        ["YES\nThe context discusses weather, not geography."]
+    )
     from inspect_dataset.scanners.answerability import _make_scanner
 
     scanner = _make_scanner("fake-model")
-    records = [{
-        "q": "What is the capital of France?",
-        "a": "Paris",
-        "context": "It was a sunny day with clear skies.",
-    }]
+    records = [
+        {
+            "q": "What is the capital of France?",
+            "a": "Paris",
+            "context": "It was a sunny day with clear skies.",
+        }
+    ]
     findings = asyncio.run(scanner(records, FIELDS))
     assert len(findings) == 1
     assert findings[0].metadata["has_context"] is True
@@ -84,17 +82,17 @@ def test_unanswerable_with_context_flagged(patch_get_model):
 
 
 def test_answerable_with_context_not_flagged(patch_get_model):
-    patch_get_model.return_value = _mock_model([
-        "NO\nThe context directly answers the question."
-    ])
+    patch_get_model.return_value = _mock_model(["NO\nThe context directly answers the question."])
     from inspect_dataset.scanners.answerability import _make_scanner
 
     scanner = _make_scanner("fake-model")
-    records = [{
-        "q": "What is the capital of France?",
-        "a": "Paris",
-        "context": "France is a country in Europe. Its capital is Paris.",
-    }]
+    records = [
+        {
+            "q": "What is the capital of France?",
+            "a": "Paris",
+            "context": "France is a country in Europe. Its capital is Paris.",
+        }
+    ]
     findings = asyncio.run(scanner(records, FIELDS))
     assert len(findings) == 0
 
@@ -128,11 +126,13 @@ def test_context_field_detection():
 
 
 def test_multiple_records_mixed(patch_get_model):
-    patch_get_model.return_value = _mock_model([
-        "YES\nUnanswerable",
-        "NO\nAnswerable",
-        "YES\nAlso unanswerable",
-    ])
+    patch_get_model.return_value = _mock_model(
+        [
+            "YES\nUnanswerable",
+            "NO\nAnswerable",
+            "YES\nAlso unanswerable",
+        ]
+    )
     from inspect_dataset.scanners.answerability import _make_scanner
 
     scanner = _make_scanner("fake-model")

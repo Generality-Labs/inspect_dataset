@@ -8,6 +8,24 @@ from pathlib import Path
 
 import pytest
 
+
+def _chromium_available() -> bool:
+    """CI and sandboxes often lack Playwright browsers — skip rather than error."""
+    try:
+        from playwright.sync_api import sync_playwright
+
+        with sync_playwright() as p:
+            browser = p.chromium.launch()
+            browser.close()
+        return True
+    except Exception:
+        return False
+
+
+pytestmark = pytest.mark.skipif(
+    not _chromium_available(), reason="Playwright chromium not available"
+)
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -100,8 +118,7 @@ def _create_fixture() -> None:
     (FINDINGS_DIR / "scan_summary.json").write_text(json.dumps(summary, indent=2))
 
     samples = [
-        {"index": i, "question": f"Q{i}?", "answer": f"A{i}", "id": f"q{i}"}
-        for i in range(10)
+        {"index": i, "question": f"Q{i}?", "answer": f"A{i}", "id": f"q{i}"} for i in range(10)
     ]
     (FINDINGS_DIR / "samples.json").write_text(json.dumps(samples, indent=2))
 
@@ -351,11 +368,9 @@ def test_api_sample_invalid_idx(server_url: str) -> None:
     import urllib.error
     import urllib.request
 
-    try:
+    with pytest.raises(urllib.error.HTTPError) as excinfo:
         urllib.request.urlopen(f"{server_url}/api/{SLUG}/sample/abc")
-        assert False, "Expected HTTPError"
-    except urllib.error.HTTPError as e:
-        assert e.code == 400
+    assert excinfo.value.code == 400
 
 
 def test_finding_detail_shows_sample_content(page, server_url: str) -> None:

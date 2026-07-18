@@ -19,6 +19,7 @@ uv run inspect-dataset scan <dataset> --split <split> --limit 200 -o /tmp/inspec
 Use `--limit 200` as a default unless the user specifies otherwise — enough to get representative signal without being slow.
 
 Read the output from the terminal and the saved files:
+
 - `/tmp/inspect-dataset-audit/scan_summary.json` — counts by scanner/severity
 - `/tmp/inspect-dataset-audit/REPORT.md` — human-readable summary
 - Individual JSON files per scanner for detailed findings
@@ -36,6 +37,7 @@ for idx in [<flagged indices>]:
 ```
 
 For each scanner that produced findings, answer:
+
 - Are these real problems or false positives?
 - What does the underlying data actually look like?
 - What would the impact be on an evaluation using this dataset?
@@ -43,12 +45,14 @@ For each scanner that produced findings, answer:
 ## Step 3: Identify gaps in the built-in scanners
 
 After reviewing the data directly, think about what the built-in scanners missed. The four built-in scanners check:
+
 - Answer length (too long for exact-match)
 - Duplicate questions
 - Capitalisation/punctuation/length inconsistency
 - Answer class imbalance
 
 Common issues they don't catch:
+
 - Answers that appear verbatim in the question (leakage)
 - Multiple valid answers for the same question
 - Questions that reference external context not in the record (e.g. "what is shown in the image above?")

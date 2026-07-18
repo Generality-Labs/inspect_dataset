@@ -13,6 +13,7 @@ def recs(*pairs: tuple[str, str]) -> list[dict]:
 # No image field — classify by answer agreement
 # ---------------------------------------------------------------------------
 
+
 def test_no_duplicates_no_findings():
     data = recs(("what is A?", "yes"), ("what is B?", "no"), ("what is C?", "yes"))
     assert duplicate_questions(data, FIELDS) == []
@@ -27,7 +28,9 @@ def test_no_image_same_answer_is_high():
 
 
 def test_no_image_different_answer_is_low():
-    data = recs(("is the heart enlarged?", "yes"), ("other", "no"), ("is the heart enlarged?", "no"))
+    data = recs(
+        ("is the heart enlarged?", "yes"), ("other", "no"), ("is the heart enlarged?", "no")
+    )
     findings = duplicate_questions(data, FIELDS)
     assert len(findings) == 2
     assert all(f.severity == "low" for f in findings)
@@ -77,7 +80,10 @@ def test_same_question_different_image_same_answer_is_medium():
 
 def test_same_question_different_image_different_answer_is_low():
     # Same question, different images, different answers → standard VQA reuse
-    data = [img_rec("is the heart enlarged?", "yes", IMG1), img_rec("is the heart enlarged?", "no", IMG2)]
+    data = [
+        img_rec("is the heart enlarged?", "yes", IMG1),
+        img_rec("is the heart enlarged?", "no", IMG2),
+    ]
     findings = duplicate_questions(data, IMG_FIELDS)
     reuse = [f for f in findings if f.metadata.get("duplicate_type") == "question_reuse"]
     assert len(reuse) == 2
@@ -114,6 +120,7 @@ def test_no_duplicates_with_image_no_findings():
 # Normalisation
 # ---------------------------------------------------------------------------
 
+
 def test_case_insensitive_normalisation():
     data = recs(("What Is A?", "yes"), ("what is a?", "yes"))
     findings = duplicate_questions(data, FIELDS)
@@ -129,6 +136,7 @@ def test_whitespace_normalisation():
 # ---------------------------------------------------------------------------
 # Indices and IDs
 # ---------------------------------------------------------------------------
+
 
 def test_finding_indices_are_correct():
     data = recs(("unique", "x"), ("dup", "y"), ("other", "z"), ("dup", "y"))

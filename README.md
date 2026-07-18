@@ -16,7 +16,7 @@ uv add inspect-dataset
 
 ## Usage
 
-```bash
+````bash
 # Scan a HuggingFace dataset
 inspect-dataset scan flaviagiammarino/vqa-rad --split test -o findings/
 
@@ -65,10 +65,9 @@ shipped in the repository and included in the package.
 
 ```bash
 uv sync --extra dev
-```
+````
 
-1. Return to the repository root and generate a findings directory if you do
-not already have one:
+1. Return to the repository root and generate a findings directory if you do not already have one:
 
 ```bash
 uv run inspect-dataset scan flaviagiammarino/vqa-rad --split test -o findings/
@@ -88,8 +87,7 @@ http://localhost:7576/
 
 ### Rebuilding the frontend
 
-You only need to rebuild the frontend if you change files in
-`src/inspect_dataset/_view/www/`:
+You only need to rebuild the frontend if you change files in `src/inspect_dataset/_view/www/`:
 
 ```bash
 cd src/inspect_dataset/_view/www
@@ -97,8 +95,7 @@ npm install
 npm run build
 ```
 
-The viewer accepts either a single findings directory, a parent directory
-containing multiple findings directories, or an explicit list of directories:
+The viewer accepts either a single findings directory, a parent directory containing multiple findings directories, or an explicit list of directories:
 
 ```bash
 uv run inspect-dataset view findings/
@@ -108,23 +105,23 @@ uv run inspect-dataset view results/vqa-rad/ results/medqa/
 
 ## Scanners
 
-| Scanner | Severity | What it flags |
-| ------- | -------- | ------------- |
-| `answer_length` | medium | Answers longer than N words (default: 4). Long answers are unlikely to be reproduced verbatim by exact-match scorers. |
-| `duplicate_questions` | high | Questions that appear more than once. Duplicates inflate sample counts and bias metrics. |
-| `inconsistent_format` | low/medium | Capitalisation, punctuation, or length deviations from the dataset majority (80%+ threshold). |
-| `answer_distribution` | high | Datasets where a single answer accounts for ≥85% of samples — a model that always predicts that answer would score highly without any understanding. |
-| `forced_choice_leakage` | medium | Questions offering explicit options via "or" where the answer is one of those options. |
-| `encoding_issues` | low | Questions or answers containing non-printable or control characters. |
-| `binary_question_ratio` | low | Datasets where a high proportion of questions are binary (yes/no). |
+| Scanner                 | Severity   | What it flags                                                                                                                                        |
+| ----------------------- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `answer_length`         | medium     | Answers longer than N words (default: 4). Long answers are unlikely to be reproduced verbatim by exact-match scorers.                                |
+| `duplicate_questions`   | high       | Questions that appear more than once. Duplicates inflate sample counts and bias metrics.                                                             |
+| `inconsistent_format`   | low/medium | Capitalisation, punctuation, or length deviations from the dataset majority (80%+ threshold).                                                        |
+| `answer_distribution`   | high       | Datasets where a single answer accounts for ≥85% of samples — a model that always predicts that answer would score highly without any understanding. |
+| `forced_choice_leakage` | medium     | Questions offering explicit options via "or" where the answer is one of those options.                                                               |
+| `encoding_issues`       | low        | Questions or answers containing non-printable or control characters.                                                                                 |
+| `binary_question_ratio` | low        | Datasets where a high proportion of questions are binary (yes/no).                                                                                   |
 
 ### LLM Scanners (require `--model`)
 
-| Scanner | Severity | What it flags |
-| ------- | -------- | ------------- |
-| `ambiguity` | medium | Questions that are ambiguous or underspecified — can be interpreted multiple ways. |
-| `label_correctness` | high | Samples where the ground-truth answer appears to be factually incorrect. |
-| `answerability` | medium | Questions that cannot be answered from the provided context (auto-detects context columns). |
+| Scanner             | Severity | What it flags                                                                               |
+| ------------------- | -------- | ------------------------------------------------------------------------------------------- |
+| `ambiguity`         | medium   | Questions that are ambiguous or underspecified — can be interpreted multiple ways.          |
+| `label_correctness` | high     | Samples where the ground-truth answer appears to be factually incorrect.                    |
+| `answerability`     | medium   | Questions that cannot be answered from the provided context (auto-detects context columns). |
 
 ## Output
 
@@ -144,11 +141,7 @@ Each finding includes the scanner name, severity, category, explanation, sample 
 
 ## Integration with inspect-scout
 
-inspect-scout tracks which samples models consistently fail or succeed on.
-inspect-dataset provides a complementary static pass before running evals.
-A future release will accept inspect-scout results directly to produce
-eval-informed findings and a `clean_ids.txt` export for quality-adjusted
-benchmark scores.
+inspect-scout tracks which samples models consistently fail or succeed on. inspect-dataset provides a complementary static pass before running evals. A future release will accept inspect-scout results directly to produce eval-informed findings and a `clean_ids.txt` export for quality-adjusted benchmark scores.
 
 ## Development
 
@@ -157,8 +150,7 @@ uv sync --extra dev
 uv run pytest
 ```
 
-If you are working on the interactive viewer itself, also install frontend
-dependencies and build the bundle:
+If you are working on the interactive viewer itself, also install frontend dependencies and build the bundle:
 
 ```bash
 cd src/inspect_dataset/_view/www

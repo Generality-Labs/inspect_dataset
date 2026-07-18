@@ -1,4 +1,5 @@
 """Tests for save_findings output, particularly scan_summary.json content."""
+
 from __future__ import annotations
 
 import json

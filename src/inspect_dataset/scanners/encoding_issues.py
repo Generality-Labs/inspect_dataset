@@ -6,16 +6,15 @@ from inspect_dataset.scanner import ScannerDef, get_sample_id
 # Control characters except for standard whitespace (\n \r \t are borderline —
 # we flag \t and other non-printable controls but not \n/\r which can be
 # legitimate in multi-line answers).
-_CONTROL_CHARS = frozenset(range(0x00, 0x20)) - {0x0A, 0x0D}  # exclude \n \r
+_CONTROL_CHARS = frozenset(range(0x20)) - {0x0A, 0x0D}  # exclude \n \r
 
 
 def _find_bad_chars(text: str) -> list[str]:
     seen: list[str] = []
     for ch in text:
         cp = ord(ch)
-        if cp in _CONTROL_CHARS or cp == 0x7F:  # DEL
-            if repr(ch) not in seen:
-                seen.append(repr(ch))
+        if (cp in _CONTROL_CHARS or cp == 0x7F) and repr(ch) not in seen:  # 0x7F = DEL
+            seen.append(repr(ch))
     return seen
 
 
