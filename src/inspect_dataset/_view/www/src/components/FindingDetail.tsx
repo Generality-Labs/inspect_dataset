@@ -60,8 +60,14 @@ export function FindingDetail() {
   };
 
   const allImages = [
-    ...(sampleDetail?.images ?? []).map((img) => ({ src: img.data_url, label: img.field })),
-    ...(sampleDetail?.files ?? []).map((f) => ({ src: f.data_url, label: f.name })),
+    ...(sampleDetail?.images ?? []).map((img) => ({
+      src: img.data_url,
+      label: img.field,
+    })),
+    ...(sampleDetail?.files ?? []).map((f) => ({
+      src: f.data_url,
+      label: f.name,
+    })),
   ];
 
   return (

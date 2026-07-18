@@ -1,6 +1,18 @@
 import { create } from "zustand";
-import type { DatasetInfo, Finding, Sample, Summary, TriageStatus } from "./types";
-import { fetchDatasets, fetchFindings, fetchSamples, fetchSummary, postTriage } from "./api";
+import type {
+  DatasetInfo,
+  Finding,
+  Sample,
+  Summary,
+  TriageStatus,
+} from "./types";
+import {
+  fetchDatasets,
+  fetchFindings,
+  fetchSamples,
+  fetchSummary,
+  postTriage,
+} from "./api";
 
 interface AppState {
   // Dataset list (loaded once on startup)
@@ -47,7 +59,12 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   loadDataset: async (slug: string) => {
-    set({ loading: true, error: null, currentSlug: slug, selectedFinding: null });
+    set({
+      loading: true,
+      error: null,
+      currentSlug: slug,
+      selectedFinding: null,
+    });
     try {
       const [summary, findings, samples] = await Promise.all([
         fetchSummary(slug),
@@ -91,9 +108,7 @@ export function getFilteredFindings(
 }
 
 /** Scanner name → finding count (from full findings list). */
-export function getScannerCounts(
-  findings: Finding[],
-): Record<string, number> {
+export function getScannerCounts(findings: Finding[]): Record<string, number> {
   const counts: Record<string, number> = {};
   for (const f of findings) {
     counts[f.scanner] = (counts[f.scanner] || 0) + 1;

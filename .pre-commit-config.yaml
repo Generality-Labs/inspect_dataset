@@ -67,6 +67,21 @@ repos:
         args: [--persona=auditor]
         stages: [manual]
 
+  - repo: local
+    hooks:
+      # Formatter for the viewer frontend. Deliberately scoped to ts/tsx/css/
+      # html/js under www/ so it can never fight mdformat (which owns all
+      # Markdown) or check-json; www/.prettierignore guards manual runs too.
+      # language_version: system reuses the installed node rather than
+      # downloading one into the hook env.
+      - id: prettier
+        name: prettier (viewer frontend)
+        language: node
+        language_version: system
+        additional_dependencies: ["prettier@3.9.5"]
+        entry: prettier --write
+        files: ^src/inspect_dataset/_view/www/.*\.(ts|tsx|css|html|js)$
+
   - repo: https://github.com/executablebooks/mdformat
     rev: 82912cdaea4fb830f751504486a7879c70526547 # 1.0.0
     hooks:

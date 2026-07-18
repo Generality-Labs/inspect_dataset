@@ -4,7 +4,11 @@ import { AgGridReact } from "ag-grid-react";
 import { useStore } from "../store";
 import type { Finding, Sample } from "../types";
 import type { ColDef, ICellRendererParams } from "ag-grid-community";
-import { AllCommunityModule, ModuleRegistry, themeQuartz } from "ag-grid-community";
+import {
+  AllCommunityModule,
+  ModuleRegistry,
+  themeQuartz,
+} from "ag-grid-community";
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
@@ -19,10 +23,12 @@ interface SampleRow {
 const SEVERITY_ORDER: Record<string, number> = { high: 0, medium: 1, low: 2 };
 
 function FindingsBadges({ findings }: { findings: Finding[] }) {
-  if (findings.length === 0) return <span className="text-body-secondary">—</span>;
+  if (findings.length === 0)
+    return <span className="text-body-secondary">—</span>;
 
   const sorted = [...findings].sort(
-    (a, b) => (SEVERITY_ORDER[a.severity] ?? 3) - (SEVERITY_ORDER[b.severity] ?? 3),
+    (a, b) =>
+      (SEVERITY_ORDER[a.severity] ?? 3) - (SEVERITY_ORDER[b.severity] ?? 3),
   );
 
   const badgeCls: Record<string, string> = {
@@ -34,7 +40,10 @@ function FindingsBadges({ findings }: { findings: Finding[] }) {
   return (
     <span>
       {sorted.map((f) => (
-        <span key={f.id} className={`badge ${badgeCls[f.severity] ?? "bg-secondary"} me-1`}>
+        <span
+          key={f.id}
+          className={`badge ${badgeCls[f.severity] ?? "bg-secondary"} me-1`}
+        >
           {f.scanner}
         </span>
       ))}
@@ -111,14 +120,18 @@ export function SamplesTab() {
               field: "question" as const,
               flex: 2,
               cellRenderer: (params: ICellRendererParams<SampleRow>) =>
-                params.value != null ? <TextCell value={String(params.value)} /> : null,
+                params.value != null ? (
+                  <TextCell value={String(params.value)} />
+                ) : null,
             },
             {
               headerName: "Answer",
               field: "answer" as const,
               flex: 1,
               cellRenderer: (params: ICellRendererParams<SampleRow>) =>
-                params.value != null ? <TextCell value={String(params.value)} /> : null,
+                params.value != null ? (
+                  <TextCell value={String(params.value)} />
+                ) : null,
             },
           ]
         : []),

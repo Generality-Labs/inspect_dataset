@@ -95,8 +95,8 @@ function DatasetLayout() {
 
       <footer className="border-top bg-body-tertiary px-3 py-1 d-flex justify-content-between align-items-center small text-body-secondary">
         <span>
-          Keyboard: <kbd>c</kbd> confirm · <kbd>d</kbd> dismiss ·{" "}
-          <kbd>n</kbd>/<kbd>p</kbd> next/prev
+          Keyboard: <kbd>c</kbd> confirm · <kbd>d</kbd> dismiss · <kbd>n</kbd>/
+          <kbd>p</kbd> next/prev
         </span>
         <a
           href={exportUrl(slug ?? "")}

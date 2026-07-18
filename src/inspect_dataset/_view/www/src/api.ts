@@ -1,4 +1,11 @@
-import type { DatasetInfo, Finding, Sample, SampleDetail, Summary, TriageStatus } from "./types";
+import type {
+  DatasetInfo,
+  Finding,
+  Sample,
+  SampleDetail,
+  Summary,
+  TriageStatus,
+} from "./types";
 
 const BASE = "/api";
 

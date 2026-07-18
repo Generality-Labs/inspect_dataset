@@ -37,10 +37,7 @@ export function FindingsList() {
   }
 
   return (
-    <div
-      className="flex-grow-1"
-      style={{ overflowY: "auto", minWidth: 0 }}
-    >
+    <div className="flex-grow-1" style={{ overflowY: "auto", minWidth: 0 }}>
       {filtered.map((f) => (
         <FindingRow
           key={f.id}
@@ -74,21 +71,15 @@ function FindingRow({
       data-finding-id={finding.id}
     >
       <div className="d-flex align-items-start gap-2">
-        <span
-          className={clsx("badge mt-1", SEVERITY_BADGE[finding.severity])}
-        >
+        <span className={clsx("badge mt-1", SEVERITY_BADGE[finding.severity])}>
           {finding.severity.toUpperCase()}
         </span>
         <div className="flex-grow-1 min-width-0">
           <div className="d-flex justify-content-between">
-            <span className="fw-semibold text-truncate">
-              {finding.scanner}
-            </span>
+            <span className="fw-semibold text-truncate">{finding.scanner}</span>
             <small className="text-body-secondary ms-2 flex-shrink-0">
               #{finding.sample_index}
-              {triageIcon && (
-                <i className={clsx("bi ms-1", triageIcon)} />
-              )}
+              {triageIcon && <i className={clsx("bi ms-1", triageIcon)} />}
             </small>
           </div>
           <div
