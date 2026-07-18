@@ -3,6 +3,8 @@ name = "inspect-dataset"
 version = "0.3.4"
 description = "Dataset quality scanner for AI evaluation datasets"
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [
     { name = "Matt Fisher", email = "m@ttfisher.com" }
 ]

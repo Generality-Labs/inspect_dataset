@@ -5,7 +5,7 @@ _src_path: gh:MattFisher/python-project-template
 author_email: m@ttfisher.com
 author_name: Matt Fisher
 github_owner: Generality-Labs
-license: Proprietary
+license: MIT
 project_description: Dataset quality scanner for AI evaluation datasets
 project_kind: library
 project_name: inspect-dataset
