@@ -521,6 +521,31 @@ Design principles:
 - [ ] Edit-in-place with write-back to the sidecar file + single-sample re-scan (turns triage into curation)
 - [ ] Audit provenance: record "verified against page image" per sample in `triage.json` with the md file's git hash, so staleness is detectable
 
+#### v0.6.4 — Generalisation pass: audit contract (speculative)
+
+> **Status: speculative.** Deliberately deferred until the v0.6.1/v0.6.3 features have been used in anger on the driving benchmark — extracting a contract before first real use means guessing which knobs matter. The forcing deadline is PyPI: the first published release containing v0.6 turns today's implicit conventions into API commitments, so this pass should land (or be consciously rejected) before then.
+
+The cross-artifact scanners and audit view currently encode the driving benchmark's vocabulary as implicit conventions:
+
+- `ocr_resistant` — a benchmark-specific record field hardcoded as the cross-artifact skip condition
+- `task_type` contains `"page"` — a magic-string rule gating the omission direction
+- `ground_truth_table.markdown` — the local loader's fallback reads one benchmark's JSON schema shape
+- The artifact-directory layout ("every `*.txt`/`*.md` except `ground_truth.*` and `index.md` is a tool output; `page.png` is the page image") restates one benchmark's cache builder
+
+These conventions fail *silently* for any dataset shaped differently — a dataset whose skip-field has another name doesn't error, it quietly produces false positives.
+
+**Proposed shape** (not a pile of CLI flags — a record-level contract):
+
+- Scanners and viewer consume only **reserved dunder fields**: `__artifacts_dir__` (exists), plus e.g. `__skip_cross_artifact__`, `__gold_covers_source__`, `__page_image__`, `__tool_texts__`
+- A **record adapter** hook — a sibling of `--scanner-module` that imports a transform function — lets each benchmark map its own vocabulary onto the contract (`ocr_resistant` → `__skip_cross_artifact__`, etc.), keeping benchmark schema knowledge out of this package
+- The artifact layout gets documented as a first-class interface (or replaced by explicit fields set by the adapter)
+
+**Longer-term, if inspect-dataset gets significant uptake:**
+
+- Eval packages could *ship their own adapters* the way they ship `@task` definitions today — `inspect-dataset scan some_eval/task --adapter some_eval.audit` with zero local configuration
+- An **"audit UI spec"** — a small declarative description an eval provides of what its side-by-side audit view should show (source artifact, rendered gold, comparison panes) — would let the viewer serve very different benchmark shapes without frontend plugins
+- The **HuggingFace dataset schema** (`datasets.Features`) is an untapped source for the same contract: `Image` columns could auto-populate the page/source pane, `ClassLabel`/typed columns could drive scanner applicability, and dataset cards could seed the audit spec — much of the adapter could be inferred rather than written for HF-hosted datasets
+
 ______________________________________________________________________
 
 ## CLI Design
