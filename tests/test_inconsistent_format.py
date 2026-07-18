@@ -92,7 +92,10 @@ def test_mixed_punctuation_below_threshold_no_finding():
 
 def test_length_outlier_flagged():
     # 20 one-word answers + one 20-word outlier — outlier exceeds mean + 3*stdev
-    long = "one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty"
+    long = (
+        "one two three four five six seven eight nine ten eleven twelve "
+        "thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty"
+    )
     recs = records(*["yes"] * 20, long)
     findings = [
         f for f in inconsistent_format(recs, FIELDS) if f.metadata.get("issue") == "length_outlier"

@@ -62,7 +62,8 @@ def print_report(run: ScanRun, console: Console | None = None) -> None:
     for scanner_name, findings in sorted(by_scanner.items()):
         findings_sorted = sorted(findings, key=lambda f: _SEVERITY_ORDER[f.severity])
         console.rule(
-            f"[bold]{scanner_name}[/bold] ({len(findings)} finding{'s' if len(findings) != 1 else ''})"
+            f"[bold]{scanner_name}[/bold] "
+            f"({len(findings)} finding{'s' if len(findings) != 1 else ''})"
         )
         for f in findings_sorted[:5]:
             colour = _SEVERITY_COLOUR[f.severity]

@@ -95,7 +95,10 @@ def cli() -> None:
 @click.option(
     "--image-field",
     default=None,
-    help="Column name for images. Used by duplicate_questions to distinguish same-question/different-image pairs from true duplicates.",
+    help=(
+        "Column name for images. Used by duplicate_questions to distinguish "
+        "same-question/different-image pairs from true duplicates."
+    ),
 )
 @click.option(
     "--scanners",
@@ -138,7 +141,10 @@ def cli() -> None:
     "--output-dir",
     default=None,
     type=click.Path(),
-    help="Save findings JSON + REPORT.md to this directory (default: findings/<dataset>_<YYYY-MM-DDTHH-MM-SS>).",
+    help=(
+        "Save findings JSON + REPORT.md to this directory "
+        "(default: findings/<dataset>_<YYYY-MM-DDTHH-MM-SS>)."
+    ),
 )
 def scan(
     dataset: str,

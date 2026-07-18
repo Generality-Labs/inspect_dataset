@@ -166,7 +166,8 @@ def _scan_without_image(records: list[Record], fields: FieldMap) -> list[Finding
             explanation = (
                 f"Question appears {len(occurrences)} times with different answers "
                 f"(at indices {indices}). "
-                "In multimodal datasets this is expected — use --image-field for precise classification."
+                "In multimodal datasets this is expected — use --image-field "
+                "for precise classification."
             )
 
         for idx, record in occurrences:
