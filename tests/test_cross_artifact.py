@@ -7,8 +7,7 @@ from inspect_dataset.scanners.text_layer_recall import text_layer_recall
 FIELDS = FieldMap(question="q", answer="a", id="id")
 
 PAGE_TEXT = (
-    "CONSOLIDATED BALANCE SHEETS\nItem 2023\n"
-    "Cash and equivalents $ 48,304\nTotal assets 272,425\n"
+    "CONSOLIDATED BALANCE SHEETS\nItem 2023\nCash and equivalents $ 48,304\nTotal assets 272,425\n"
 )
 
 GOLD_MD = """\
@@ -109,8 +108,8 @@ def test_empty_tool_outputs_skipped(tmp_path):
 def test_hyphenated_linebreaks_joined(tmp_path):
     sample = tmp_path / "s1"
     sample.mkdir()
-    (sample / "pymupdf.txt").write_text("Consolidated infor-\nmation follows\n")
-    rec = record(sample, answer="Consolidated information follows")
+    (sample / "pymupdf.txt").write_text("correctly hyphen-\nated words\n")
+    rec = record(sample, answer="correctly hyphenated words")
     assert text_layer_recall([rec], FIELDS) == []
 
 

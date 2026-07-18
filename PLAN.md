@@ -512,11 +512,12 @@ Design principles:
 - [ ] `gold_completeness` — page regions not represented in gold at all
 - [ ] `reading_order` — gold block order matches visual reading order
 
-#### v0.6.3 — Viewer: side-by-side audit panel
+#### v0.6.3 — Viewer: side-by-side audit panel (in progress)
 
-- [ ] Rendered-markdown field type in sample detail (tables render as tables)
-- [ ] Side-by-side layout: page image | rendered gold | raw source, findings highlighted at their `line` anchors in the raw view
-- [ ] Tool-output comparison strip with word-level diff against gold
+- [x] Rendered-markdown field type in sample detail (react-markdown + remark-gfm; multi-line answers render as real tables/headings)
+- [x] Side-by-side audit view: full-screen overlay with page image | rendered gold | raw source; finding `line` anchors highlighted in the raw pane (file lines mapped through the sample's `line_offset`)
+- [x] Tool-output source selector in the raw pane (cached per-tool outputs served by the view server; scan_summary records `files_root` so the server can resolve artifacts)
+- [ ] Word-level diff of tool outputs against gold
 - [ ] Edit-in-place with write-back to the sidecar file + single-sample re-scan (turns triage into curation)
 - [ ] Audit provenance: record "verified against page image" per sample in `triage.json` with the md file's git hash, so staleness is detectable
 

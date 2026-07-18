@@ -81,6 +81,7 @@ def save_findings(
     output_dir: Path,
     records: list[Record] | None = None,
     fields: FieldMap | None = None,
+    files_root: str | None = None,
 ) -> None:
     """Write per-scanner JSON files, a summary, and optionally samples to output_dir."""
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -95,6 +96,7 @@ def save_findings(
         "split": run.split,
         "source_type": run.source_type,
         "revision": run.revision,
+        "files_root": files_root,
         "total_samples": run.total_samples,
         "total_findings": len(run.findings),
         "by_scanner": {

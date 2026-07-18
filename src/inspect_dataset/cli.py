@@ -248,6 +248,7 @@ def scan(
     resolved_split: str | None = split
 
     if is_local:
+        dataset = str(Path(dataset).resolve())
         console.print(f"Loading local samples from [bold]{dataset}[/bold]...")
         records, fields = load_local_samples(dataset, limit=limit)
         resolved_split = None
@@ -329,7 +330,13 @@ def scan(
         output_dir = f"findings/{slug}_{timestamp}"
 
     out = Path(output_dir)
-    save_findings(run, out, records=records, fields=fields)
+    save_findings(
+        run,
+        out,
+        records=records,
+        fields=fields,
+        files_root=str(Path(files_root).resolve()) if files_root else None,
+    )
     console.print(f"Findings saved to [bold]{out}[/bold]")
 
 
