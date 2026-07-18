@@ -8,15 +8,60 @@ import click
 from dotenv import load_dotenv
 from rich.console import Console
 
-from inspect_dataset.loader import load_hf_dataset, load_task_from_spec, resolve_fields
+from inspect_dataset.loader import (
+    load_hf_dataset,
+    load_local_samples,
+    load_task_from_spec,
+    resolve_fields,
+)
 from inspect_dataset.report import print_report, save_findings
-from inspect_dataset.scanner import AnyScanner, run_scanners, run_scanners_async
+from inspect_dataset.scanner import (
+    AnyScanner,
+    ScannerDef,
+    run_scanners,
+    run_scanners_async,
+)
 from inspect_dataset.scanners import (
     ALL_SCANNER_NAMES,
     BUILTIN_SCANNER_NAMES,
     BUILTIN_SCANNERS,
     LLM_SCANNER_FACTORIES,
 )
+
+
+def _load_scanner_module(module_name: str) -> list[ScannerDef]:
+    """Import a module and collect its ScannerDef objects.
+
+    A module-level ``SCANNERS`` list takes precedence; otherwise every public
+    attribute that is a ``ScannerDef`` is collected.
+    """
+    import importlib
+
+    try:
+        module = importlib.import_module(module_name)
+    except ImportError as e:
+        raise click.BadParameter(
+            f"Could not import scanner module {module_name!r}: {e}",
+            param_hint="--scanner-module",
+        ) from e
+
+    declared = getattr(module, "SCANNERS", None)
+    if declared is not None:
+        defs = [s for s in declared if isinstance(s, ScannerDef)]
+    else:
+        defs = [
+            obj
+            for name in dir(module)
+            if not name.startswith("_")
+            for obj in [getattr(module, name)]
+            if isinstance(obj, ScannerDef)
+        ]
+    if not defs:
+        raise click.BadParameter(
+            f"No ScannerDef objects found in module {module_name!r}",
+            param_hint="--scanner-module",
+        )
+    return defs
 
 
 @click.group()
@@ -64,6 +109,15 @@ def cli() -> None:
     ),
 )
 @click.option(
+    "--scanner-module",
+    "scanner_modules",
+    multiple=True,
+    help=(
+        "Python module providing extra scanners (a module-level SCANNERS list, "
+        "or any ScannerDef attributes). Repeatable."
+    ),
+)
+@click.option(
     "--model",
     default=None,
     envvar="INSPECT_DATASET_MODEL",
@@ -97,6 +151,7 @@ def scan(
     id_field: str | None,
     image_field: str | None,
     scanners: str | None,
+    scanner_modules: tuple[str, ...],
     model: str | None,
     max_answer_words: int,
     limit: int | None,
@@ -111,25 +166,37 @@ def scan(
       - An inspect_ai registry name:   inspect_evals/medqa
       - A file + task name:            path/to/task.py@task_fn
       - A module + task name:          inspect_evals.medqa@medqa
+      - A local annotation directory:  path/to/data/samples/
     """
     console = Console()
+
+    # Plugin scanners from --scanner-module
+    plugin_scanners: list[ScannerDef] = []
+    for module_name in scanner_modules:
+        plugin_scanners.extend(_load_scanner_module(module_name))
+    plugin_by_name = {s.name: s for s in plugin_scanners}
+    available_names = ALL_SCANNER_NAMES | set(plugin_by_name)
 
     # Resolve scanners
     scanner_list: list[AnyScanner]
     if scanners:
         names = [n.strip() for n in scanners.split(",")]
-        unknown = [n for n in names if n not in ALL_SCANNER_NAMES]
+        unknown = [n for n in names if n not in available_names]
         if unknown:
             raise click.BadParameter(
                 f"Unknown scanner(s): {', '.join(unknown)}. "
-                f"Available: {', '.join(sorted(ALL_SCANNER_NAMES))}",
+                f"Available: {', '.join(sorted(available_names))}",
                 param_hint="--scanners",
             )
-        static_names = [n for n in names if n in BUILTIN_SCANNER_NAMES]
+        static_names = [
+            n for n in names if n in BUILTIN_SCANNER_NAMES or n in plugin_by_name
+        ]
         llm_names = [n for n in names if n in LLM_SCANNER_FACTORIES]
-        scanner_list = [BUILTIN_SCANNER_NAMES[n] for n in static_names]
+        scanner_list = [
+            BUILTIN_SCANNER_NAMES.get(n) or plugin_by_name[n] for n in static_names
+        ]
     else:
-        scanner_list = list(BUILTIN_SCANNERS)
+        scanner_list = [*BUILTIN_SCANNERS, *plugin_scanners]
         llm_names = list(LLM_SCANNER_FACTORIES) if model else []
 
     # Instantiate LLM scanners if --model provided
@@ -155,18 +222,30 @@ def scan(
             for s in scanner_list
         ]
 
-    # Detect inspect_ai task spec.
+    # Detect the source type.
+    # - An existing directory → local annotation directory
     # - "@" present → always a task spec (module@fn or file@fn)
     # - "package/task" with no "@" → task if "package" is an installed Python
     #   package (importlib.util.find_spec returns non-None); HF slugs like
     #   "owner/dataset" have no corresponding Python package.
     import importlib.util as _ilu
 
-    is_task = "@" in dataset or (
-        "/" in dataset and _ilu.find_spec(dataset.split("/")[0]) is not None
+    is_local = Path(dataset).is_dir()
+    is_task = not is_local and (
+        "@" in dataset
+        or ("/" in dataset and _ilu.find_spec(dataset.split("/")[0]) is not None)
     )
+    resolved_split: str | None = split
 
-    if is_task:
+    if is_local:
+        console.print(f"Loading local samples from [bold]{dataset}[/bold]...")
+        records, fields = load_local_samples(dataset, limit=limit)
+        resolved_split = None
+        if question_field or answer_field or id_field:
+            fields = resolve_fields(
+                records, question_field, answer_field, id_field, image_field
+            )
+    elif is_task:
         console.print(f"Loading inspect_ai task [bold]{dataset}[/bold]...")
         records, fields = load_task_from_spec(dataset, limit=limit)
         # Allow field overrides even on the task path
@@ -196,7 +275,7 @@ def scan(
             f"(model: [bold]{model}[/bold])"
         )
 
-    source_type = "inspect_task" if is_task else "hf"
+    source_type = "local" if is_local else ("inspect_task" if is_task else "hf")
 
     if llm_scanners:
         import asyncio
@@ -207,7 +286,7 @@ def scan(
                 fields,
                 all_scanners,
                 dataset_name=dataset,
-                split=split,
+                split=resolved_split,
                 source_type=source_type,
                 revision=revision,
             )
@@ -218,7 +297,7 @@ def scan(
             fields,
             scanner_list,
             dataset_name=dataset,
-            split=split,
+            split=resolved_split,
             source_type=source_type,
             revision=revision,
         )
@@ -226,7 +305,8 @@ def scan(
     print_report(run, console=console)
 
     if output_dir is None:
-        slug = re.sub(r"[^a-z0-9]+", "-", dataset.split("/")[-1].lower()).strip("-")
+        base = Path(dataset).resolve().name if is_local else dataset.split("/")[-1]
+        slug = re.sub(r"[^a-z0-9]+", "-", base.lower()).strip("-")
         timestamp = datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
         output_dir = f"findings/{slug}_{timestamp}"
 
