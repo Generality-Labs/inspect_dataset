@@ -612,6 +612,92 @@ This is a significant expansion of the UI. Rough phasing:
 - [ ] `model_contradicts_label` — model answer matches label but scorer gave 0
 - [ ] `--scout-results` CLI flag accepts inspect-scout parquet directory
 
+### v0.6 — Markdown ground-truth auditing (in progress)
+
+Support auditing benchmarks whose gold labels are structured Markdown documents
+rather than short answer strings. Driving use case: a document-understanding
+benchmark whose sample directory holds JSON annotations with sidecar Pandoc
+Markdown gold files (`ground_truth_markdown_path`, YAML frontmatter). The
+question being answered: *does each gold file faithfully represent its source
+document?*
+
+Design principles:
+
+- inspect-dataset stays generic: it gains a **local annotation-directory
+  loader**, **markdown-aware static scanners**, and a **plugin mechanism** so
+  benchmark repos can ship domain-specific scanners themselves.
+- Benchmark-format-specific checks (frontmatter schema, financial checksums,
+  JSON↔markdown cross-checks) live in the benchmark repo (e.g.
+  `my_benchmark.audit.scanners`) and are loaded via `--scanner-module`.
+- The benchmark's extraction cache (per-sample page images, per-tool outputs)
+  is the bridge for cross-artifact and viewer features — no bespoke
+  extraction logic here.
+
+#### v0.6.0 — Local loader, markdown scanners, plugin scanners
+
+- [ ] `Finding.line` — optional 1-based line number so markdown scanners can
+  anchor findings to a location in the gold file (viewer highlighting later)
+- [ ] `loader.py`: `load_local_samples(dir)` — loads a directory of JSON
+  annotation files; resolves sidecar markdown via `*_path` convention
+  (`ground_truth_markdown_path`), strips YAML frontmatter into
+  `__frontmatter__`, records `__md_body_offset__` so findings can report
+  real file line numbers; synthesises `question` from task/source fields;
+  `answer` = gold markdown body (or embedded `ground_truth_table.markdown`)
+- [ ] CLI: a dataset argument that is an existing directory routes to the
+  local loader (`source_type="local"`, `split=None`)
+- [ ] `markdown_integrity` scanner — gold markdown parses cleanly: pipe-table
+  rows with inconsistent column counts, missing/malformed delimiter rows,
+  fully-empty table rows, heading-level jumps, broken/empty image links
+- [ ] `extraction_artifacts` scanner — characters that betray un-cleaned PDF
+  extraction: ligatures (U+FB00–FB06), soft hyphens, zero-width chars, NBSP,
+  BOM, U+FFFD replacement char
+- [ ] `--scanner-module` CLI option (repeatable) — import a module, collect
+  its `ScannerDef`s (module-level `SCANNERS` list, else attribute scan);
+  plugin scanner names participate in `--scanners` filtering
+- [ ] Benchmark-side plugin scanners (live in the benchmark repo):
+  - [ ] `frontmatter_consistency` — sidecar frontmatter agrees with the JSON
+    annotation (page vs `page_number`, source vs `pdf_path` basename, tier)
+  - [ ] `json_md_agreement` — `ground_truth_table.rows` agrees cell-by-cell
+    with the embedded `ground_truth_table.markdown`
+  - [ ] `numeric_checksum` — "Total …" rows in gold tables must equal a
+    contiguous run of the numeric rows above them (catches transcription
+    typos in financial tables)
+  - [ ] `sidecar_consistency` — orphan `.md` files no JSON references,
+    missing sidecars, broken `![…](assets/…)` links
+
+#### v0.6.1 — Cross-artifact scanners (gold vs the PDF)
+
+- [ ] `--files-root` so scanners can resolve per-sample artifacts (source
+  PDF, cached `page.png`, per-tool outputs)
+- [ ] `text_layer_recall` — word-align gold markdown against the PDF text
+  layer (from the pipeline cache); flag gold tokens absent from the PDF
+  (typos/hallucinations) and PDF tokens absent from gold (omissions); skip
+  `ocr_resistant` samples
+- [ ] `numeric_provenance` — every number in gold must appear verbatim in
+  the text layer
+- [ ] `tool_consensus` — when top extraction tools agree with each other but
+  all disagree with gold at the same spot, flag the gold (static sibling of
+  the v0.5 `universal_failure` idea, seeded from cached per-tool scores)
+
+#### v0.6.2 — Vision LLM scanners
+
+- [ ] Extend the LLM scanner plumbing to image inputs
+- [ ] `gold_fidelity` — page image + gold markdown → specific discrepancies
+  with locations
+- [ ] `gold_completeness` — page regions not represented in gold at all
+- [ ] `reading_order` — gold block order matches visual reading order
+
+#### v0.6.3 — Viewer: side-by-side audit panel
+
+- [ ] Rendered-markdown field type in sample detail (tables render as tables)
+- [ ] Side-by-side layout: page image | rendered gold | raw source, findings
+  highlighted at their `line` anchors in the raw view
+- [ ] Tool-output comparison strip with word-level diff against gold
+- [ ] Edit-in-place with write-back to the sidecar file + single-sample
+  re-scan (turns triage into curation)
+- [ ] Audit provenance: record "verified against page image" per sample in
+  `triage.json` with the md file's git hash, so staleness is detectable
+
 ---
 
 ## CLI Design
