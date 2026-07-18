@@ -27,9 +27,7 @@ def _check_table(
     header_line, header = block[0]
     n_cols = len(_cells(header))
 
-    if len(block) < 2 or not (
-        _DELIMITER_ROW.match(block[1][1]) and "-" in block[1][1]
-    ):
+    if len(block) < 2 or not (_DELIMITER_ROW.match(block[1][1]) and "-" in block[1][1]):
         findings.append(
             make(
                 "medium",
@@ -138,8 +136,7 @@ def _scan(records: list[Record], fields: FieldMap) -> list[Finding]:
                     findings.append(
                         make(
                             "medium",
-                            f"Image link at line {line_no} has an empty target: "
-                            f"{match.group(0)!r}",
+                            f"Image link at line {line_no} has an empty target: {match.group(0)!r}",
                             line_no,
                             {"link": match.group(0)},
                         )

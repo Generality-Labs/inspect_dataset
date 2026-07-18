@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 import click
@@ -75,9 +75,7 @@ def cli() -> None:
 
 @cli.command()
 @click.argument("dataset")
-@click.option(
-    "--split", default="train", show_default=True, help="Dataset split to load."
-)
+@click.option("--split", default="train", show_default=True, help="Dataset split to load.")
 @click.option("--revision", default=None, help="Dataset revision / commit SHA to pin.")
 @click.option(
     "--question-field",
@@ -97,7 +95,10 @@ def cli() -> None:
 @click.option(
     "--image-field",
     default=None,
-    help="Column name for images. Used by duplicate_questions to distinguish same-question/different-image pairs from true duplicates.",
+    help=(
+        "Column name for images. Used by duplicate_questions to distinguish "
+        "same-question/different-image pairs from true duplicates."
+    ),
 )
 @click.option(
     "--scanners",
@@ -140,7 +141,10 @@ def cli() -> None:
     "--output-dir",
     default=None,
     type=click.Path(),
-    help="Save findings JSON + REPORT.md to this directory (default: findings/<dataset>_<YYYY-MM-DDTHH-MM-SS>).",
+    help=(
+        "Save findings JSON + REPORT.md to this directory "
+        "(default: findings/<dataset>_<YYYY-MM-DDTHH-MM-SS>)."
+    ),
 )
 def scan(
     dataset: str,
@@ -157,7 +161,7 @@ def scan(
     limit: int | None,
     output_dir: str | None,
 ) -> None:
-    """Scan a dataset for quality issues.
+    r"""Scan a dataset for quality issues.
 
     DATASET is one of:
 
@@ -188,13 +192,9 @@ def scan(
                 f"Available: {', '.join(sorted(available_names))}",
                 param_hint="--scanners",
             )
-        static_names = [
-            n for n in names if n in BUILTIN_SCANNER_NAMES or n in plugin_by_name
-        ]
+        static_names = [n for n in names if n in BUILTIN_SCANNER_NAMES or n in plugin_by_name]
         llm_names = [n for n in names if n in LLM_SCANNER_FACTORIES]
-        scanner_list = [
-            BUILTIN_SCANNER_NAMES.get(n) or plugin_by_name[n] for n in static_names
-        ]
+        scanner_list = [BUILTIN_SCANNER_NAMES.get(n) or plugin_by_name[n] for n in static_names]
     else:
         scanner_list = [*BUILTIN_SCANNERS, *plugin_scanners]
         llm_names = list(LLM_SCANNER_FACTORIES) if model else []
@@ -232,8 +232,7 @@ def scan(
 
     is_local = Path(dataset).is_dir()
     is_task = not is_local and (
-        "@" in dataset
-        or ("/" in dataset and _ilu.find_spec(dataset.split("/")[0]) is not None)
+        "@" in dataset or ("/" in dataset and _ilu.find_spec(dataset.split("/")[0]) is not None)
     )
     resolved_split: str | None = split
 
@@ -242,23 +241,17 @@ def scan(
         records, fields = load_local_samples(dataset, limit=limit)
         resolved_split = None
         if question_field or answer_field or id_field:
-            fields = resolve_fields(
-                records, question_field, answer_field, id_field, image_field
-            )
+            fields = resolve_fields(records, question_field, answer_field, id_field, image_field)
     elif is_task:
         console.print(f"Loading inspect_ai task [bold]{dataset}[/bold]...")
         records, fields = load_task_from_spec(dataset, limit=limit)
         # Allow field overrides even on the task path
         if question_field or answer_field or id_field:
-            fields = resolve_fields(
-                records, question_field, answer_field, id_field, image_field
-            )
+            fields = resolve_fields(records, question_field, answer_field, id_field, image_field)
     else:
         console.print(f"Loading [bold]{dataset}[/bold] split=[bold]{split}[/bold]...")
         records = load_hf_dataset(dataset, split=split, revision=revision, limit=limit)
-        fields = resolve_fields(
-            records, question_field, answer_field, id_field, image_field
-        )
+        fields = resolve_fields(records, question_field, answer_field, id_field, image_field)
 
     console.print(f"  Loaded {len(records):,} samples.")
     console.print(
@@ -307,7 +300,7 @@ def scan(
     if output_dir is None:
         base = Path(dataset).resolve().name if is_local else dataset.split("/")[-1]
         slug = re.sub(r"[^a-z0-9]+", "-", base.lower()).strip("-")
-        timestamp = datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
+        timestamp = datetime.now(UTC).strftime("%Y-%m-%dT%H-%M-%S")
         output_dir = f"findings/{slug}_{timestamp}"
 
     out = Path(output_dir)
@@ -330,7 +323,7 @@ def list_tasks() -> None:
         raise click.ClickException(
             "inspect_ai is required for this command. "
             "Install it with: pip install 'inspect-dataset[inspect]'"
-        )
+        ) from None
 
     ensure_entry_points()
     tasks = registry_find(lambda info: info.type == "task")
@@ -416,7 +409,7 @@ def _resolve_findings_dirs(paths: tuple[str, ...]) -> list[str]:
     help="Don't automatically open the browser.",
 )
 def view(findings_dirs: tuple[str, ...], port: int, no_open: bool) -> None:
-    """Launch the interactive dataset explorer.
+    r"""Launch the interactive dataset explorer.
 
     FINDINGS_DIRS is one or more directories produced by
     `inspect-dataset scan -o <dir>`, or a parent directory that contains
@@ -446,10 +439,11 @@ def view(findings_dirs: tuple[str, ...], port: int, no_open: bool) -> None:
             "Run `inspect-dataset scan ... -o <dir>` first."
         )
 
+    dir_paths: list[str | Path] = list(dirs)
     try:
-        create_app(dirs)  # validate before starting
+        create_app(dir_paths)  # validate before starting
     except FileNotFoundError as e:
-        raise click.ClickException(str(e))
+        raise click.ClickException(str(e)) from e
 
     url = f"http://localhost:{port}"
     label = dirs[0] if len(dirs) == 1 else f"{len(dirs)} datasets"
@@ -458,7 +452,7 @@ def view(findings_dirs: tuple[str, ...], port: int, no_open: bool) -> None:
     if not no_open:
         webbrowser.open(url)
 
-    run_server(dirs, port=port)
+    run_server(dir_paths, port=port)
 
 
 @cli.command()

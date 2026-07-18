@@ -95,8 +95,7 @@ def _load_dataset_dir(path: Path) -> dict[str, Any]:
     summary_file = path / "scan_summary.json"
     if not summary_file.exists():
         raise FileNotFoundError(
-            f"No scan_summary.json in {path}. "
-            "Run `inspect-dataset scan ... -o <dir>` first."
+            f"No scan_summary.json in {path}. Run `inspect-dataset scan ... -o <dir>` first."
         )
 
     summary = _load_json(summary_file)
@@ -137,14 +136,15 @@ def _load_dataset_dir(path: Path) -> dict[str, Any]:
     }
 
 
-async def _load_records_cached(ds: dict[str, Any]) -> list[dict] | None:
+async def _load_records_cached(ds: dict[str, Any]) -> list[dict[str, Any]] | None:
     """Lazy-load the original dataset records and cache them in the dataset dict.
 
     Returns None (without raising) if the dataset cannot be loaded —
     callers fall back to samples.json data without images.
     """
-    if ds.get("records_cache") is not None:
-        return ds["records_cache"]  # type: ignore[return-value]
+    cached: list[dict[str, Any]] | None = ds.get("records_cache")
+    if cached is not None:
+        return cached
 
     summary = ds["summary"]
     source_type: str = summary.get("source_type", "")
@@ -182,7 +182,8 @@ def _get_dataset(request: web.Request) -> dict[str, Any]:
     datasets: dict[str, Any] = request.app["datasets"]
     if slug not in datasets:
         raise web.HTTPNotFound(reason=f"Dataset '{slug}' not found.")
-    return datasets[slug]
+    ds: dict[str, Any] = datasets[slug]
+    return ds
 
 
 def create_app(
@@ -342,7 +343,7 @@ async def handle_sample(request: web.Request) -> web.Response:
         return web.json_response({"error": "invalid index"}, status=400)
 
     # Base data from pre-serialised samples.json (always available)
-    samples: list[dict] = ds["samples"]
+    samples: list[dict[str, Any]] = ds["samples"]
     basic = next((s for s in samples if s["index"] == idx), None)
     result: dict[str, Any] = {
         "index": idx,
@@ -362,11 +363,7 @@ async def handle_sample(request: web.Request) -> web.Response:
         for key, val in record.items():
             if key.startswith("__"):
                 continue
-            if (
-                isinstance(val, dict)
-                and isinstance(val.get("bytes"), bytes)
-                and val["bytes"]
-            ):
+            if isinstance(val, dict) and isinstance(val.get("bytes"), bytes) and val["bytes"]:
                 result["images"].append(
                     {
                         "field": key,
@@ -375,7 +372,7 @@ async def handle_sample(request: web.Request) -> web.Response:
                 )
 
         # inspect_ai Sample.files stored under __files__
-        files_map: dict = record.get("__files__") or {}
+        files_map: dict[str, Any] = record.get("__files__") or {}
         for name, data in files_map.items():
             if isinstance(data, bytes):
                 result["files"].append(

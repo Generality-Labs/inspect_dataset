@@ -1,0 +1,9 @@
+# Build output — rebuilt by npm, never hand-edited
+dist/
+
+# Markdown is owned by mdformat (repo pre-commit hook); prettier must not
+# reformat it even on a manual `prettier --write .`
+*.md
+
+# npm-managed
+package-lock.json

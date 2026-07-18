@@ -28,18 +28,16 @@ def _mock_model(responses: list[str]) -> MagicMock:
     return model
 
 
-@pytest.fixture()
+@pytest.fixture
 def patch_get_model():
-    with patch(
-        "inspect_dataset.scanners.label_correctness.get_model"
-    ) as mock:
+    with patch("inspect_dataset.scanners.label_correctness.get_model") as mock:
         yield mock
 
 
 def test_incorrect_label_flagged(patch_get_model):
-    patch_get_model.return_value = _mock_model([
-        "YES\nThe answer is factually incorrect. 2+2=4, not 5."
-    ])
+    patch_get_model.return_value = _mock_model(
+        ["YES\nThe answer is factually incorrect. 2+2=4, not 5."]
+    )
     from inspect_dataset.scanners.label_correctness import _make_scanner
 
     scanner = _make_scanner("fake-model")
@@ -54,9 +52,7 @@ def test_incorrect_label_flagged(patch_get_model):
 
 
 def test_correct_label_not_flagged(patch_get_model):
-    patch_get_model.return_value = _mock_model([
-        "NO\nThe answer is correct."
-    ])
+    patch_get_model.return_value = _mock_model(["NO\nThe answer is correct."])
     from inspect_dataset.scanners.label_correctness import _make_scanner
 
     scanner = _make_scanner("fake-model")
@@ -86,11 +82,13 @@ def test_empty_question_skipped(patch_get_model):
 
 
 def test_multiple_records_mixed(patch_get_model):
-    patch_get_model.return_value = _mock_model([
-        "YES\nWrong answer",
-        "NO\nCorrect",
-        "YES\nAlso wrong",
-    ])
+    patch_get_model.return_value = _mock_model(
+        [
+            "YES\nWrong answer",
+            "NO\nCorrect",
+            "YES\nAlso wrong",
+        ]
+    )
     from inspect_dataset.scanners.label_correctness import _make_scanner
 
     scanner = _make_scanner("fake-model")
@@ -106,9 +104,7 @@ def test_multiple_records_mixed(patch_get_model):
 
 
 def test_scanner_metadata(patch_get_model):
-    patch_get_model.return_value = _mock_model([
-        "YES\nFactually wrong."
-    ])
+    patch_get_model.return_value = _mock_model(["YES\nFactually wrong."])
     from inspect_dataset.scanners.label_correctness import _make_scanner
 
     scanner = _make_scanner("fake-model")

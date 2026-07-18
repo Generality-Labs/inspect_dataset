@@ -53,10 +53,13 @@ _EXT_TO_MIME: dict[str, str] = {
 def detect_mime_from_bytes(data: bytes) -> str | None:
     """Return the MIME type detected from the magic bytes, or None if unknown."""
     for mime, prefix, extra_offset, extra_bytes in _SIGNATURES:
-        if data[:len(prefix)] == prefix:
-            if extra_offset is not None and extra_bytes is not None:
-                if data[extra_offset:extra_offset + len(extra_bytes)] != extra_bytes:
-                    continue
+        if data[: len(prefix)] == prefix:
+            if (
+                extra_offset is not None
+                and extra_bytes is not None
+                and data[extra_offset : extra_offset + len(extra_bytes)] != extra_bytes
+            ):
+                continue
             return mime
     return None
 
@@ -66,7 +69,7 @@ def mime_from_extension(path: str) -> str | None:
     dot = path.rfind(".")
     if dot == -1:
         return None
-    ext = path[dot + 1:].lower()
+    ext = path[dot + 1 :].lower()
     return _EXT_TO_MIME.get(ext)
 
 
@@ -108,7 +111,7 @@ def _get_declared_mime(img: Any) -> str | None:
         # data:image/png;base64,<payload>
         header = img.split(",", 1)[0]  # "data:image/png;base64"
         mime_part = header.replace("data:", "").split(";")[0]
-        return mime_part if mime_part else None
+        return mime_part or None
     if isinstance(img, dict):
         path = img.get("path")
         if isinstance(path, str) and path:

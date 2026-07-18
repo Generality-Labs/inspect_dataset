@@ -62,35 +62,37 @@ def _scan_with_image(records: list[Record], fields: FieldMap) -> list[Finding]:
 
         # Group occurrences by image key to find exact (question, image) duplicates
         by_image: dict[str | None, list[tuple[int, Record]]] = defaultdict(list)
-        for (idx, record), img_key in zip(occurrences, img_keys):
+        for (idx, record), img_key in zip(occurrences, img_keys, strict=True):
             by_image[img_key].append((idx, record))
 
         # Emit HIGH finding for any (question, image) group that appears more than once
-        for img_key, dups in by_image.items():
+        for dups in by_image.values():
             if len(dups) <= 1:
                 continue
             dup_indices = [idx for idx, _ in dups]
             for idx, record in dups:
-                findings.append(Finding(
-                    scanner="duplicate_questions",
-                    severity="high",
-                    category="question_quality",
-                    explanation=(
-                        f"Question and image both appear {len(dups)} times "
-                        f"(at indices {dup_indices}). This is a real duplicate sample."
-                    ),
-                    sample_index=idx,
-                    sample_id=get_sample_id(record, fields, idx),
-                    metadata={
-                        "question": q_text,
-                        "duplicate_indices": dup_indices,
-                        "duplicate_count": len(dups),
-                        "duplicate_type": "exact",
-                    },
-                ))
+                findings.append(
+                    Finding(
+                        scanner="duplicate_questions",
+                        severity="high",
+                        category="question_quality",
+                        explanation=(
+                            f"Question and image both appear {len(dups)} times "
+                            f"(at indices {dup_indices}). This is a real duplicate sample."
+                        ),
+                        sample_index=idx,
+                        sample_id=get_sample_id(record, fields, idx),
+                        metadata={
+                            "question": q_text,
+                            "duplicate_indices": dup_indices,
+                            "duplicate_count": len(dups),
+                            "duplicate_type": "exact",
+                        },
+                    )
+                )
 
         # Only emit question-reuse findings when images genuinely differ
-        unique_img_keys = set(k for k in img_keys if k is not None)
+        unique_img_keys = {k for k in img_keys if k is not None}
         if len(unique_img_keys) <= 1:
             continue  # all same image — already handled above as exact duplicates
 
@@ -115,21 +117,23 @@ def _scan_with_image(records: list[Record], fields: FieldMap) -> list[Finding]:
             )
 
         for idx, record in occurrences:
-            findings.append(Finding(
-                scanner="duplicate_questions",
-                severity=severity,  # type: ignore[arg-type]
-                category="question_quality",
-                explanation=explanation,
-                sample_index=idx,
-                sample_id=get_sample_id(record, fields, idx),
-                metadata={
-                    "question": q_text,
-                    "duplicate_indices": indices,
-                    "duplicate_count": len(occurrences),
-                    "duplicate_type": "question_reuse",
-                    "answers_agree": answers_agree,
-                },
-            ))
+            findings.append(
+                Finding(
+                    scanner="duplicate_questions",
+                    severity=severity,  # type: ignore[arg-type]
+                    category="question_quality",
+                    explanation=explanation,
+                    sample_index=idx,
+                    sample_id=get_sample_id(record, fields, idx),
+                    metadata={
+                        "question": q_text,
+                        "duplicate_indices": indices,
+                        "duplicate_count": len(occurrences),
+                        "duplicate_type": "question_reuse",
+                        "answers_agree": answers_agree,
+                    },
+                )
+            )
 
     return findings
 
@@ -162,24 +166,27 @@ def _scan_without_image(records: list[Record], fields: FieldMap) -> list[Finding
             explanation = (
                 f"Question appears {len(occurrences)} times with different answers "
                 f"(at indices {indices}). "
-                "In multimodal datasets this is expected — use --image-field for precise classification."
+                "In multimodal datasets this is expected — use --image-field "
+                "for precise classification."
             )
 
         for idx, record in occurrences:
-            findings.append(Finding(
-                scanner="duplicate_questions",
-                severity=severity,  # type: ignore[arg-type]
-                category="question_quality",
-                explanation=explanation,
-                sample_index=idx,
-                sample_id=get_sample_id(record, fields, idx),
-                metadata={
-                    "question": q_text,
-                    "duplicate_indices": indices,
-                    "duplicate_count": len(occurrences),
-                    "answers_agree": answers_agree,
-                },
-            ))
+            findings.append(
+                Finding(
+                    scanner="duplicate_questions",
+                    severity=severity,  # type: ignore[arg-type]
+                    category="question_quality",
+                    explanation=explanation,
+                    sample_index=idx,
+                    sample_id=get_sample_id(record, fields, idx),
+                    metadata={
+                        "question": q_text,
+                        "duplicate_indices": indices,
+                        "duplicate_count": len(occurrences),
+                        "answers_agree": answers_agree,
+                    },
+                )
+            )
 
     return findings
 

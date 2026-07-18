@@ -60,7 +60,7 @@ def load_hf_dataset(
         raise ImportError(
             "The 'datasets' package is required to load HuggingFace datasets. "
             "Install it with: pip install datasets"
-        )
+        ) from None
 
     from datasets import Image as HFImage
 
@@ -109,9 +109,7 @@ def split_frontmatter(text: str) -> tuple[dict[str, str], str, int]:
     return {}, text, 0
 
 
-def load_local_samples(
-    path: str | Path, limit: int | None = None
-) -> tuple[list[Record], FieldMap]:
+def load_local_samples(path: str | Path, limit: int | None = None) -> tuple[list[Record], FieldMap]:
     """Load a directory of JSON annotation files with markdown sidecars.
 
     Supports a common annotation layout for document benchmarks:
@@ -125,9 +123,7 @@ def load_local_samples(
     ``ground_truth_table.markdown`` string when present.
     """
     directory = Path(path)
-    json_files = sorted(
-        p for p in directory.glob("*.json") if p.name != "provenance.json"
-    )
+    json_files = sorted(p for p in directory.glob("*.json") if p.name != "provenance.json")
     records: list[Record] = []
     for json_path in json_files:
         try:
@@ -140,11 +136,7 @@ def load_local_samples(
         record["__json_path__"] = str(json_path)
 
         md_rel = next(
-            (
-                v
-                for k, v in data.items()
-                if k.endswith("_markdown_path") and isinstance(v, str)
-            ),
+            (v for k, v in data.items() if k.endswith("_markdown_path") and isinstance(v, str)),
             None,
         )
         answer = ""
@@ -188,21 +180,34 @@ def _input_to_str(input: Any) -> str:
         return input
     if isinstance(input, list) and input:
         for msg in reversed(input):
-            role = getattr(msg, "role", None) or (msg.get("role") if isinstance(msg, dict) else None)
+            role = getattr(msg, "role", None) or (
+                msg.get("role") if isinstance(msg, dict) else None
+            )
             if role == "user":
-                content = getattr(msg, "content", None) or (msg.get("content") if isinstance(msg, dict) else None)
+                content = getattr(msg, "content", None) or (
+                    msg.get("content") if isinstance(msg, dict) else None
+                )
                 if isinstance(content, str):
                     return content
                 if isinstance(content, list):
                     # ContentBlock list — join text parts
                     return " ".join(
-                        str(getattr(part, "text", "") or (part.get("text", "") if isinstance(part, dict) else ""))
+                        str(
+                            getattr(part, "text", "")
+                            or (part.get("text", "") if isinstance(part, dict) else "")
+                        )
                         for part in content
-                        if (getattr(part, "type", None) or (part.get("type") if isinstance(part, dict) else None)) == "text"
+                        if (
+                            getattr(part, "type", None)
+                            or (part.get("type") if isinstance(part, dict) else None)
+                        )
+                        == "text"
                     )
         # Fallback: stringify first message content
         msg = input[0]
-        content = getattr(msg, "content", None) or (msg.get("content") if isinstance(msg, dict) else None)
+        content = getattr(msg, "content", None) or (
+            msg.get("content") if isinstance(msg, dict) else None
+        )
         return str(content) if content is not None else ""
     return str(input)
 
@@ -270,13 +275,16 @@ def _find_task_in_module(module: Any, hint: str) -> Any:
 
     # hint resolved to a non-callable (e.g. a submodule) — scan for @task fns
     try:
-        from inspect_ai._util.registry import is_registry_object, registry_info as _rinfo
+        from inspect_ai._util.registry import is_registry_object
+        from inspect_ai._util.registry import registry_info as _rinfo
+
         task_fns = [
             obj
             for name in dir(module)
             if not name.startswith("_")
             for obj in [getattr(module, name, None)]
-            if obj is not None and callable(obj)
+            if obj is not None
+            and callable(obj)
             and is_registry_object(obj)
             and _rinfo(obj).type == "task"
         ]
@@ -286,9 +294,7 @@ def _find_task_in_module(module: Any, hint: str) -> Any:
     if len(task_fns) == 1:
         return task_fns[0]
     if len(task_fns) > 1:
-        names = ", ".join(
-            getattr(fn, "__name__", str(fn)) for fn in task_fns
-        )
+        names = ", ".join(getattr(fn, "__name__", str(fn)) for fn in task_fns)
         raise ValueError(
             f"Module {module.__name__!r} contains multiple tasks: {names}. "
             f"Specify one explicitly, e.g. {module.__name__}@<task_name>"
@@ -353,9 +359,8 @@ def load_task_from_spec(spec: str, limit: int | None = None) -> tuple[list[Recor
         from inspect_ai._eval.loader import load_task_spec as _inspect_load_task_spec
     except ImportError:
         raise ImportError(
-            "inspect_ai is required to load tasks by spec. "
-            "Install it with: pip install inspect-ai"
-        )
+            "inspect_ai is required to load tasks by spec. Install it with: pip install inspect-ai"
+        ) from None
 
     tasks = _inspect_load_task_spec(spec)
     if not tasks:

@@ -65,11 +65,7 @@ _CONTEXT_CANDIDATES = [
 def _find_context_field(record: Record, fields: FieldMap) -> str | None:
     """Try to find a context field in the record."""
     for candidate in _CONTEXT_CANDIDATES:
-        if (
-            candidate in record
-            and candidate != fields.question
-            and candidate != fields.answer
-        ):
+        if candidate in record and candidate != fields.question and candidate != fields.answer:
             val = record[candidate]
             if val and str(val).strip():
                 return candidate
@@ -97,20 +93,16 @@ def _make_scanner(model_name: str, concurrency: int = 20) -> LLMScannerDef:
                     )
                 )
             else:
-                prompts.append(
-                    _PROMPT_TEMPLATE_NO_CONTEXT.format(question=question, answer=answer)
-                )
+                prompts.append(_PROMPT_TEMPLATE_NO_CONTEXT.format(question=question, answer=answer))
             indices.append(i)
 
         if not prompts:
             return []
 
-        judgments: list[LLMJudgment] = await judge_batch(
-            model, prompts, concurrency=concurrency
-        )
+        judgments: list[LLMJudgment] = await judge_batch(model, prompts, concurrency=concurrency)
 
         findings = []
-        for idx, judgment in zip(indices, judgments):
+        for idx, judgment in zip(indices, judgments, strict=True):
             if judgment.flagged:
                 record = records[idx]
                 question = str(record.get(fields.question, "") or "").strip()
@@ -124,11 +116,7 @@ def _make_scanner(model_name: str, concurrency: int = 20) -> LLMScannerDef:
                         explanation=(
                             "LLM flagged this question as "
                             "unanswerable "
-                            + (
-                                "from the provided context"
-                                if context_field
-                                else "without context"
-                            )
+                            + ("from the provided context" if context_field else "without context")
                             + f". Question: {question!r}  "
                             f"Answer: {answer!r}  "
                             f"Reasoning: {judgment.reasoning}"

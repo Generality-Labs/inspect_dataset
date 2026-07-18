@@ -12,18 +12,31 @@ export function FindingDetail() {
   const [searchParams] = useSearchParams();
   const { slug } = useParams<{ slug: string }>();
 
-  const [sampleDetail, setSampleDetail] = useState<SampleDetail | null>(null);
-  const [sampleLoading, setSampleLoading] = useState(false);
+  // Loaded detail is keyed by (slug, sample_index) so the current sample's
+  // detail and loading flag can be derived instead of set in the effect.
+  const [loaded, setLoaded] = useState<{
+    key: string;
+    detail: SampleDetail | null;
+  } | null>(null);
 
   useEffect(() => {
     if (finding == null || !slug) return;
-    setSampleDetail(null);
-    setSampleLoading(true);
+    let cancelled = false;
+    const key = `${slug}:${finding.sample_index}`;
     fetchSampleDetail(slug, finding.sample_index).then((d) => {
-      setSampleDetail(d);
-      setSampleLoading(false);
+      if (!cancelled) setLoaded({ key, detail: d });
     });
+    return () => {
+      cancelled = true;
+    };
   }, [finding?.sample_index, slug]);
+
+  const currentKey =
+    finding != null && slug ? `${slug}:${finding.sample_index}` : null;
+  const sampleDetail =
+    loaded && loaded.key === currentKey ? loaded.detail : null;
+  const sampleLoading =
+    currentKey != null && (loaded == null || loaded.key !== currentKey);
 
   if (!finding) {
     return (
@@ -60,8 +73,14 @@ export function FindingDetail() {
   };
 
   const allImages = [
-    ...(sampleDetail?.images ?? []).map((img) => ({ src: img.data_url, label: img.field })),
-    ...(sampleDetail?.files ?? []).map((f) => ({ src: f.data_url, label: f.name })),
+    ...(sampleDetail?.images ?? []).map((img) => ({
+      src: img.data_url,
+      label: img.field,
+    })),
+    ...(sampleDetail?.files ?? []).map((f) => ({
+      src: f.data_url,
+      label: f.name,
+    })),
   ];
 
   return (
