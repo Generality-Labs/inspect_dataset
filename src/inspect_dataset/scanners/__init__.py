@@ -18,6 +18,8 @@ from inspect_dataset.scanners.label_correctness import (
     _make_scanner as _make_label_correctness,
 )
 from inspect_dataset.scanners.markdown_integrity import markdown_integrity
+from inspect_dataset.scanners.numeric_provenance import numeric_provenance
+from inspect_dataset.scanners.text_layer_recall import text_layer_recall
 
 BUILTIN_SCANNERS: list[ScannerDef] = [
     answer_length,
@@ -30,6 +32,8 @@ BUILTIN_SCANNERS: list[ScannerDef] = [
     image_mime_type,
     markdown_integrity,
     extraction_artifacts,
+    text_layer_recall,
+    numeric_provenance,
 ]
 
 BUILTIN_SCANNER_NAMES: dict[str, ScannerDef] = {s.name: s for s in BUILTIN_SCANNERS}

@@ -135,6 +135,16 @@ def cli() -> None:
     show_default=True,
     help="Threshold for the answer_length scanner.",
 )
+@click.option(
+    "--files-root",
+    default=None,
+    type=click.Path(exists=True, file_okay=False),
+    help=(
+        "Directory of per-sample extraction artifacts (<files-root>/<sample_id>/ "
+        "with tool text outputs). Enables the cross-artifact scanners "
+        "text_layer_recall and numeric_provenance."
+    ),
+)
 @click.option("--limit", default=None, type=int, help="Cap number of samples loaded.")
 @click.option(
     "-o",
@@ -158,6 +168,7 @@ def scan(
     scanner_modules: tuple[str, ...],
     model: str | None,
     max_answer_words: int,
+    files_root: str | None,
     limit: int | None,
     output_dir: str | None,
 ) -> None:
@@ -252,6 +263,20 @@ def scan(
         console.print(f"Loading [bold]{dataset}[/bold] split=[bold]{split}[/bold]...")
         records = load_hf_dataset(dataset, split=split, revision=revision, limit=limit)
         fields = resolve_fields(records, question_field, answer_field, id_field, image_field)
+
+    if files_root is not None:
+        from inspect_dataset.scanner import get_sample_id as _gsid
+
+        root = Path(files_root)
+        attached = 0
+        for idx, record in enumerate(records):
+            sample_dir = root / str(_gsid(record, fields, idx))
+            if sample_dir.is_dir():
+                record["__artifacts_dir__"] = str(sample_dir)
+                attached += 1
+        console.print(
+            f"  Artifacts: {attached}/{len(records)} samples have a directory under {root}"
+        )
 
     console.print(f"  Loaded {len(records):,} samples.")
     console.print(
