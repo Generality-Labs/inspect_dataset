@@ -28,6 +28,12 @@ inspect = [
 requires = ["uv_build>=0.8.17,<0.9.0"]
 build-backend = "uv_build"
 
+[tool.uv.build-backend]
+# The viewer frontend ships only as its built bundle (_view/www/dist);
+# node_modules must never reach the sdist or wheel.
+source-exclude = ["**/node_modules/**"]
+wheel-exclude = ["**/node_modules/**"]
+
 [tool.ruff]
 line-length = 100
 src = ["src"]

@@ -143,6 +143,19 @@ Each finding includes the scanner name, severity, category, explanation, sample 
 
 inspect-scout tracks which samples models consistently fail or succeed on. inspect-dataset provides a complementary static pass before running evals. A future release will accept inspect-scout results directly to produce eval-informed findings and a `clean_ids.txt` export for quality-adjusted benchmark scores.
 
+## Releasing
+
+Releases publish to PyPI via [trusted publishing](https://docs.pypi.org/trusted-publishers/) — no API tokens. One-time setup: add a Trusted Publisher on PyPI for `Generality-Labs/inspect_dataset`, workflow `release.yml`, environment `pypi`.
+
+```bash
+uv version --bump minor      # or: patch / major — updates pyproject.toml
+git commit -am "Release $(uv version --short)"
+git tag "v$(uv version --short)"
+git push origin main "v$(uv version --short)"
+```
+
+The tag push triggers `.github/workflows/release.yml`, which checks the tag against the package version, builds with `uv build`, and publishes.
+
 ## Development
 
 ```bash

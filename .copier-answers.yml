@@ -9,6 +9,6 @@ license: Proprietary
 project_description: Dataset quality scanner for AI evaluation datasets
 project_kind: library
 project_name: inspect-dataset
-publish_to_pypi: false
+publish_to_pypi: true
 python_version: '3.12'
 use_coverage_gate: false
