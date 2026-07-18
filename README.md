@@ -39,6 +39,12 @@ inspect-dataset scan flaviagiammarino/vqa-rad --max-answer-words 6
 # Limit samples loaded
 inspect-dataset scan flaviagiammarino/vqa-rad --limit 500
 
+# Scan a local annotation directory (JSON samples + sidecar markdown gold),
+# cross-checking gold against cached extraction-tool outputs
+inspect-dataset scan path/to/samples/ \
+  --files-root path/to/extraction-cache/ \
+  --scanner-module my_benchmark.audit.scanners
+
 # Run LLM-powered scanners (requires --model)
 inspect-dataset scan flaviagiammarino/vqa-rad \
   --model openai/gpt-4o-mini --split test -o findings/
@@ -105,15 +111,19 @@ uv run inspect-dataset view results/vqa-rad/ results/medqa/
 
 ## Scanners
 
-| Scanner                 | Severity   | What it flags                                                                                                                                        |
-| ----------------------- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `answer_length`         | medium     | Answers longer than N words (default: 4). Long answers are unlikely to be reproduced verbatim by exact-match scorers.                                |
-| `duplicate_questions`   | high       | Questions that appear more than once. Duplicates inflate sample counts and bias metrics.                                                             |
-| `inconsistent_format`   | low/medium | Capitalisation, punctuation, or length deviations from the dataset majority (80%+ threshold).                                                        |
-| `answer_distribution`   | high       | Datasets where a single answer accounts for ≥85% of samples — a model that always predicts that answer would score highly without any understanding. |
-| `forced_choice_leakage` | medium     | Questions offering explicit options via "or" where the answer is one of those options.                                                               |
-| `encoding_issues`       | low        | Questions or answers containing non-printable or control characters.                                                                                 |
-| `binary_question_ratio` | low        | Datasets where a high proportion of questions are binary (yes/no).                                                                                   |
+| Scanner                 | Severity    | What it flags                                                                                                                                        |
+| ----------------------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `answer_length`         | medium      | Answers longer than N words (default: 4). Long answers are unlikely to be reproduced verbatim by exact-match scorers.                                |
+| `duplicate_questions`   | high        | Questions that appear more than once. Duplicates inflate sample counts and bias metrics.                                                             |
+| `inconsistent_format`   | low/medium  | Capitalisation, punctuation, or length deviations from the dataset majority (80%+ threshold).                                                        |
+| `answer_distribution`   | high        | Datasets where a single answer accounts for ≥85% of samples — a model that always predicts that answer would score highly without any understanding. |
+| `forced_choice_leakage` | medium      | Questions offering explicit options via "or" where the answer is one of those options.                                                               |
+| `encoding_issues`       | low         | Questions or answers containing non-printable or control characters.                                                                                 |
+| `binary_question_ratio` | low         | Datasets where a high proportion of questions are binary (yes/no).                                                                                   |
+| `markdown_integrity`    | low/medium  | Structural problems in Markdown answers: table column-count mismatches, missing delimiter rows, heading jumps, empty image links.                    |
+| `extraction_artifacts`  | low/medium  | Characters betraying un-cleaned PDF/OCR extraction: ligatures, soft hyphens, zero-width characters, U+FFFD.                                          |
+| `text_layer_recall`     | medium/high | With `--files-root`: gold words no extraction tool found on the page (typo candidates); for full-page gold, words every tool found that gold omits.  |
+| `numeric_provenance`    | high        | With `--files-root`: numbers in the gold that no extraction tool extracted from the page — strong transcription-error candidates.                    |
 
 ### LLM Scanners (require `--model`)
 

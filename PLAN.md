@@ -484,26 +484,26 @@ Design principles:
 - Benchmark-format-specific checks (frontmatter schema, financial checksums, JSON↔markdown cross-checks) live in the benchmark repo (e.g. `my_benchmark.audit.scanners`) and are loaded via `--scanner-module`.
 - The benchmark's extraction cache (per-sample page images, per-tool outputs) is the bridge for cross-artifact and viewer features — no bespoke extraction logic here.
 
-#### v0.6.0 — Local loader, markdown scanners, plugin scanners
+#### v0.6.0 — Local loader, markdown scanners, plugin scanners ✓
 
-- [ ] `Finding.line` — optional 1-based line number so markdown scanners can anchor findings to a location in the gold file (viewer highlighting later)
-- [ ] `loader.py`: `load_local_samples(dir)` — loads a directory of JSON annotation files; resolves sidecar markdown via `*_path` convention (`ground_truth_markdown_path`), strips YAML frontmatter into `__frontmatter__`, records `__md_body_offset__` so findings can report real file line numbers; synthesises `question` from task/source fields; `answer` = gold markdown body (or embedded `ground_truth_table.markdown`)
-- [ ] CLI: a dataset argument that is an existing directory routes to the local loader (`source_type="local"`, `split=None`)
-- [ ] `markdown_integrity` scanner — gold markdown parses cleanly: pipe-table rows with inconsistent column counts, missing/malformed delimiter rows, fully-empty table rows, heading-level jumps, broken/empty image links
-- [ ] `extraction_artifacts` scanner — characters that betray un-cleaned PDF extraction: ligatures (U+FB00–FB06), soft hyphens, zero-width chars, NBSP, BOM, U+FFFD replacement char
-- [ ] `--scanner-module` CLI option (repeatable) — import a module, collect its `ScannerDef`s (module-level `SCANNERS` list, else attribute scan); plugin scanner names participate in `--scanners` filtering
-- [ ] Benchmark-side plugin scanners (live in the benchmark repo):
-  - [ ] `frontmatter_consistency` — sidecar frontmatter agrees with the JSON annotation (page vs `page_number`, source vs `pdf_path` basename, tier)
-  - [ ] `json_md_agreement` — `ground_truth_table.rows` agrees cell-by-cell with the embedded `ground_truth_table.markdown`
-  - [ ] `numeric_checksum` — "Total …" rows in gold tables must equal a contiguous run of the numeric rows above them (catches transcription typos in financial tables)
-  - [ ] `sidecar_consistency` — orphan `.md` files no JSON references, missing sidecars, broken `![…](assets/…)` links
+- [x] `Finding.line` — optional 1-based line number so markdown scanners can anchor findings to a location in the gold file (viewer highlighting later)
+- [x] `loader.py`: `load_local_samples(dir)` — loads a directory of JSON annotation files; resolves sidecar markdown via `*_path` convention (`ground_truth_markdown_path`), strips YAML frontmatter into `__frontmatter__`, records `__md_body_offset__` so findings can report real file line numbers; synthesises `question` from task/source fields; `answer` = gold markdown body (or embedded `ground_truth_table.markdown`)
+- [x] CLI: a dataset argument that is an existing directory routes to the local loader (`source_type="local"`, `split=None`)
+- [x] `markdown_integrity` scanner — gold markdown parses cleanly: pipe-table rows with inconsistent column counts, missing/malformed delimiter rows, fully-empty table rows, heading-level jumps, broken/empty image links
+- [x] `extraction_artifacts` scanner — characters that betray un-cleaned PDF extraction: ligatures (U+FB00–FB06), soft hyphens, zero-width chars, NBSP, BOM, U+FFFD replacement char
+- [x] `--scanner-module` CLI option (repeatable) — import a module, collect its `ScannerDef`s (module-level `SCANNERS` list, else attribute scan); plugin scanner names participate in `--scanners` filtering
+- [x] Benchmark-side plugin scanners (live in the benchmark repo):
+  - [x] `frontmatter_consistency` — sidecar frontmatter agrees with the JSON annotation (page vs `page_number`, source vs `pdf_path` basename, tier)
+  - [x] `json_md_agreement` — `ground_truth_table.rows` agrees cell-by-cell with the embedded `ground_truth_table.markdown`
+  - [x] `numeric_checksum` — "Total …" rows in gold tables must equal a contiguous run of the numeric rows above them (catches transcription typos in financial tables)
+  - [x] `sidecar_consistency` — orphan `.md` files no JSON references, missing sidecars, broken `![…](assets/…)` links
 
-#### v0.6.1 — Cross-artifact scanners (gold vs the PDF)
+#### v0.6.1 — Cross-artifact scanners (gold vs the extraction cache) ✓
 
-- [ ] `--files-root` so scanners can resolve per-sample artifacts (source PDF, cached `page.png`, per-tool outputs)
-- [ ] `text_layer_recall` — word-align gold markdown against the PDF text layer (from the pipeline cache); flag gold tokens absent from the PDF (typos/hallucinations) and PDF tokens absent from gold (omissions); skip `ocr_resistant` samples
-- [ ] `numeric_provenance` — every number in gold must appear verbatim in the text layer
-- [ ] `tool_consensus` — when top extraction tools agree with each other but all disagree with gold at the same spot, flag the gold (static sibling of the v0.5 `universal_failure` idea, seeded from cached per-tool scores)
+- [x] `--files-root` — resolves `<files-root>/<sample_id>/` per record; every non-empty `*.txt`/`*.md` there (except `ground_truth.*` and `index.md`) is one tool's text output
+- [x] `text_layer_recall` — consensus-aware: gold words found by *no* tool are flagged high (typo/hallucination candidates); for full-page gold (`task_type` contains "page"), words found by *every* tool but absent from gold are flagged medium (omissions). LaTeX math spans are excluded from the existence check (they render as glyphs) but count as gold coverage. Skips `ocr_resistant` samples and hyphen-joins tool text linebreaks
+- [x] `numeric_provenance` — every number in gold (comma/`$`-normalised) must appear in at least one tool output; misses are high-severity transcription-error candidates
+- [x] `tool_consensus` — folded into `text_layer_recall`'s none-of-the-tools / all-of-the-tools semantics rather than shipping as a separate score-based scanner
 
 #### v0.6.2 — Vision LLM scanners
 
@@ -512,13 +512,39 @@ Design principles:
 - [ ] `gold_completeness` — page regions not represented in gold at all
 - [ ] `reading_order` — gold block order matches visual reading order
 
-#### v0.6.3 — Viewer: side-by-side audit panel
+#### v0.6.3 — Viewer: side-by-side audit panel (in progress)
 
-- [ ] Rendered-markdown field type in sample detail (tables render as tables)
-- [ ] Side-by-side layout: page image | rendered gold | raw source, findings highlighted at their `line` anchors in the raw view
-- [ ] Tool-output comparison strip with word-level diff against gold
+- [x] Rendered-markdown field type in sample detail (react-markdown + remark-gfm; multi-line answers render as real tables/headings)
+- [x] Side-by-side audit view: full-screen overlay with page image | rendered gold | raw source; finding `line` anchors highlighted in the raw pane (file lines mapped through the sample's `line_offset`)
+- [x] Tool-output source selector in the raw pane (cached per-tool outputs served by the view server; scan_summary records `files_root` so the server can resolve artifacts)
+- [ ] Word-level diff of tool outputs against gold
 - [ ] Edit-in-place with write-back to the sidecar file + single-sample re-scan (turns triage into curation)
 - [ ] Audit provenance: record "verified against page image" per sample in `triage.json` with the md file's git hash, so staleness is detectable
+
+#### v0.6.4 — Generalisation pass: audit contract (speculative)
+
+> **Status: speculative.** Deliberately deferred until the v0.6.1/v0.6.3 features have been used in anger on the driving benchmark — extracting a contract before first real use means guessing which knobs matter. The forcing deadline is PyPI: the first published release containing v0.6 turns today's implicit conventions into API commitments, so this pass should land (or be consciously rejected) before then.
+
+The cross-artifact scanners and audit view currently encode the driving benchmark's vocabulary as implicit conventions:
+
+- `ocr_resistant` — a benchmark-specific record field hardcoded as the cross-artifact skip condition
+- `task_type` contains `"page"` — a magic-string rule gating the omission direction
+- `ground_truth_table.markdown` — the local loader's fallback reads one benchmark's JSON schema shape
+- The artifact-directory layout ("every `*.txt`/`*.md` except `ground_truth.*` and `index.md` is a tool output; `page.png` is the page image") restates one benchmark's cache builder
+
+These conventions fail *silently* for any dataset shaped differently — a dataset whose skip-field has another name doesn't error, it quietly produces false positives.
+
+**Proposed shape** (not a pile of CLI flags — a record-level contract):
+
+- Scanners and viewer consume only **reserved dunder fields**: `__artifacts_dir__` (exists), plus e.g. `__skip_cross_artifact__`, `__gold_covers_source__`, `__page_image__`, `__tool_texts__`
+- A **record adapter** hook — a sibling of `--scanner-module` that imports a transform function — lets each benchmark map its own vocabulary onto the contract (`ocr_resistant` → `__skip_cross_artifact__`, etc.), keeping benchmark schema knowledge out of this package
+- The artifact layout gets documented as a first-class interface (or replaced by explicit fields set by the adapter)
+
+**Longer-term, if inspect-dataset gets significant uptake:**
+
+- Eval packages could *ship their own adapters* the way they ship `@task` definitions today — `inspect-dataset scan some_eval/task --adapter some_eval.audit` with zero local configuration
+- An **"audit UI spec"** — a small declarative description an eval provides of what its side-by-side audit view should show (source artifact, rendered gold, comparison panes) — would let the viewer serve very different benchmark shapes without frontend plugins
+- The **HuggingFace dataset schema** (`datasets.Features`) is an untapped source for the same contract: `Image` columns could auto-populate the page/source pane, `ClassLabel`/typed columns could drive scanner applicability, and dataset cards could seed the audit spec — much of the adapter could be inferred rather than written for HF-hosted datasets
 
 ______________________________________________________________________
 

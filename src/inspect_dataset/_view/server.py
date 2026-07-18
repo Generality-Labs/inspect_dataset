@@ -166,6 +166,19 @@ async def _load_records_cached(ds: dict[str, Any]) -> list[dict[str, Any]] | Non
             from inspect_dataset.loader import load_task_from_spec
 
             records, _ = await asyncio.to_thread(load_task_from_spec, dataset_name)
+        elif source_type == "local":
+            from inspect_dataset.loader import load_local_samples
+
+            records, fields = await asyncio.to_thread(load_local_samples, dataset_name)
+            files_root = summary.get("files_root")
+            if files_root:
+                from inspect_dataset.scanner import get_sample_id
+
+                root = Path(files_root)
+                for idx, record in enumerate(records):
+                    sample_dir = root / str(get_sample_id(record, fields, idx))
+                    if sample_dir.is_dir():
+                        record["__artifacts_dir__"] = str(sample_dir)
         else:
             return None
 
@@ -370,6 +383,26 @@ async def handle_sample(request: web.Request) -> web.Response:
                         "data_url": _to_data_url(val["bytes"], val.get("path") or ""),
                     }
                 )
+
+        # Extraction-cache artifacts (local annotation datasets): page image,
+        # per-tool text outputs, and the markdown body's line offset so the
+        # frontend can anchor file-based finding lines.
+        artifacts_dir = record.get("__artifacts_dir__")
+        if artifacts_dir:
+            adir = Path(str(artifacts_dir))
+            page_png = adir / "page.png"
+            if page_png.exists():
+                result["images"].append(
+                    {"field": "page", "data_url": _to_data_url(page_png.read_bytes(), "page.png")}
+                )
+            from inspect_dataset.scanners._artifacts import tool_texts
+
+            result["tool_outputs"] = [
+                {"name": name, "text": text} for name, text in tool_texts(record).items()
+            ]
+        offset = record.get("__md_body_offset__")
+        if isinstance(offset, int):
+            result["line_offset"] = offset
 
         # inspect_ai Sample.files stored under __files__
         files_map: dict[str, Any] = record.get("__files__") or {}
