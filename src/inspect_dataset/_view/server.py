@@ -96,8 +96,7 @@ def _load_dataset_dir(path: Path) -> dict[str, Any]:
     summary_file = path / "scan_summary.json"
     if not summary_file.exists():
         raise FileNotFoundError(
-            f"No scan_summary.json in {path}. "
-            "Run `inspect-dataset scan ... -o <dir>` first."
+            f"No scan_summary.json in {path}. Run `inspect-dataset scan ... -o <dir>` first."
         )
 
     summary = _load_json(summary_file)
@@ -167,6 +166,19 @@ async def _load_records_cached(ds: dict[str, Any]) -> list[dict[str, Any]] | Non
             from inspect_dataset.loader import load_task_from_spec
 
             records, _ = await asyncio.to_thread(load_task_from_spec, dataset_name)
+        elif source_type == "local":
+            from inspect_dataset.loader import load_local_samples
+
+            records, fields = await asyncio.to_thread(load_local_samples, dataset_name)
+            files_root = summary.get("files_root")
+            if files_root:
+                from inspect_dataset.scanner import get_sample_id
+
+                root = Path(files_root)
+                for idx, record in enumerate(records):
+                    sample_dir = root / str(get_sample_id(record, fields, idx))
+                    if sample_dir.is_dir():
+                        record["__artifacts_dir__"] = str(sample_dir)
         else:
             return None
 
@@ -228,7 +240,7 @@ def _compute_schema(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "total": n,
         }
 
-        if field_type in ("str",):
+        if field_type == "str":
             lengths = [len(str(v)) for v in values if v is not None]
             if lengths:
                 entry["min_length"] = min(lengths)
@@ -459,17 +471,33 @@ async def handle_sample(request: web.Request) -> web.Response:
         for key, val in record.items():
             if key.startswith("__"):
                 continue
-            if (
-                isinstance(val, dict)
-                and isinstance(val.get("bytes"), bytes)
-                and val["bytes"]
-            ):
+            if isinstance(val, dict) and isinstance(val.get("bytes"), bytes) and val["bytes"]:
                 result["images"].append(
                     {
                         "field": key,
                         "data_url": _to_data_url(val["bytes"], val.get("path") or ""),
                     }
                 )
+
+        # Extraction-cache artifacts (local annotation datasets): page image,
+        # per-tool text outputs, and the markdown body's line offset so the
+        # frontend can anchor file-based finding lines.
+        artifacts_dir = record.get("__artifacts_dir__")
+        if artifacts_dir:
+            adir = Path(str(artifacts_dir))
+            page_png = adir / "page.png"
+            if page_png.exists():
+                result["images"].append(
+                    {"field": "page", "data_url": _to_data_url(page_png.read_bytes(), "page.png")}
+                )
+            from inspect_dataset.scanners._artifacts import tool_texts
+
+            result["tool_outputs"] = [
+                {"name": name, "text": text} for name, text in tool_texts(record).items()
+            ]
+        offset = record.get("__md_body_offset__")
+        if isinstance(offset, int):
+            result["line_offset"] = offset
 
         # inspect_ai Sample.files stored under __files__
         files_map: dict[str, Any] = record.get("__files__") or {}
@@ -565,16 +593,12 @@ async def handle_explore_load(request: web.Request) -> web.Response:
         if source_type == "inspect_task":
             from inspect_dataset.loader import load_task_from_spec
 
-            records, fields = await asyncio.to_thread(
-                load_task_from_spec, source, limit
-            )
+            records, fields = await asyncio.to_thread(load_task_from_spec, source, limit)
         else:
             from inspect_dataset._types import FieldMap
             from inspect_dataset.loader import load_hf_dataset, resolve_fields
 
-            records = await asyncio.to_thread(
-                load_hf_dataset, source, split, None, limit
-            )
+            records = await asyncio.to_thread(load_hf_dataset, source, split, None, limit)
             try:
                 fields = resolve_fields(records, None, None, None, None)
             except Exception:
@@ -623,7 +647,7 @@ def _get_session(request: web.Request) -> dict[str, Any]:
     sessions: dict[str, Any] = request.app["explorer_sessions"]
     if session_id not in sessions:
         raise web.HTTPNotFound(reason=f"Session '{session_id}' not found.")
-    return sessions[session_id]  # type: ignore[return-value]
+    return cast(dict[str, Any], sessions[session_id])
 
 
 async def handle_explore_schema(request: web.Request) -> web.Response:
@@ -653,9 +677,7 @@ async def handle_explore_records(request: web.Request) -> web.Response:
 
     records: list[dict[str, Any]] = session["records"]
     page = records[offset : offset + limit]
-    rows = [
-        {"__index": offset + i, **_record_to_json_safe(r)} for i, r in enumerate(page)
-    ]
+    rows = [{"__index": offset + i, **_record_to_json_safe(r)} for i, r in enumerate(page)]
     return web.json_response(
         {
             "session_id": session["session_id"],
@@ -688,11 +710,7 @@ async def handle_explore_record(
     for key, val in record.items():
         if key.startswith("__"):
             continue
-        if (
-            isinstance(val, dict)
-            and isinstance(val.get("bytes"), bytes)
-            and val["bytes"]
-        ):
+        if isinstance(val, dict) and isinstance(val.get("bytes"), bytes) and val["bytes"]:
             images.append(
                 {
                     "field": key,
@@ -708,9 +726,7 @@ async def handle_explore_record(
         elif isinstance(data, str):
             files.append({"name": name, "data_url": data})
 
-    return web.json_response(
-        {"index": idx, "record": safe, "images": images, "files": files}
-    )
+    return web.json_response({"index": idx, "record": safe, "images": images, "files": files})
 
 
 # ---------------------------------------------------------------------------

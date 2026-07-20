@@ -1,14 +1,20 @@
 """Tests for load_inspect_task and import_task."""
+
 from __future__ import annotations
 
 import pytest
 
-from inspect_dataset.loader import _input_to_str, _target_to_str, load_inspect_task, load_task_from_spec
-
+from inspect_dataset.loader import (
+    _input_to_str,
+    _target_to_str,
+    load_inspect_task,
+    load_task_from_spec,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers — minimal stand-ins for inspect_ai objects
 # ---------------------------------------------------------------------------
+
 
 class _Msg:
     def __init__(self, role: str, content: str) -> None:
@@ -190,7 +196,7 @@ def test_load_task_from_spec_module_at_attr():
     fake_mod.my_task = task  # type: ignore[attr-defined]
     sys.modules["_fake_pkg._fake_mod"] = fake_mod
 
-    records, fields = load_task_from_spec("_fake_pkg._fake_mod@my_task")
+    records, _fields = load_task_from_spec("_fake_pkg._fake_mod@my_task")
     assert len(records) == 1
     assert records[0]["input"] == "q"
 
@@ -199,7 +205,7 @@ def test_load_task_from_spec_module_at_attr():
 
 def test_load_task_from_spec_bad_module():
     # Dotted name triggers the module-import branch; module doesn't exist
-    with pytest.raises(ImportError, match="no_such_pkg.no_such_mod"):
+    with pytest.raises(ImportError, match=r"no_such_pkg\.no_such_mod"):
         load_task_from_spec("no_such_pkg.no_such_mod@something")
 
 

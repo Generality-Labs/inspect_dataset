@@ -15,7 +15,7 @@ def _extract_or_options(question: str) -> list[str]:
     For "is this an MRI or a CT scan?", returns ["mri", "ct scan"].
     We strip articles and trailing punctuation to normalise for comparison.
     """
-    _ARTICLES = {"a", "an", "the"}
+    articles = {"a", "an", "the"}
 
     parts = _OR_PATTERN.split(question)
     if len(parts) < 2:
@@ -26,10 +26,10 @@ def _extract_or_options(question: str) -> list[str]:
         # Take the last few tokens before 'or' and the first few after
         tokens = part.strip().rstrip("?.,!").split()
         # Remove leading articles
-        while tokens and tokens[0].lower() in _ARTICLES:
+        while tokens and tokens[0].lower() in articles:
             tokens = tokens[1:]
         # Remove trailing articles
-        while tokens and tokens[-1].lower() in _ARTICLES:
+        while tokens and tokens[-1].lower() in articles:
             tokens = tokens[:-1]
         if tokens:
             options.append(" ".join(tokens).lower())
@@ -40,10 +40,7 @@ def _extract_or_options(question: str) -> list[str]:
 def _answer_matches_option(answer: str, options: list[str]) -> bool:
     """Return True if the answer is contained in or matches one of the options."""
     a = answer.lower().strip()
-    for opt in options:
-        if a == opt or opt.endswith(a) or a.endswith(opt):
-            return True
-    return False
+    return any(a == opt or opt.endswith(a) or a.endswith(opt) for opt in options)
 
 
 def _scan(records: list[Record], fields: FieldMap) -> list[Finding]:

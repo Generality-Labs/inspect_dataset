@@ -27,6 +27,7 @@ class Finding:
     explanation: str
     sample_index: int
     sample_id: str | int | None = None
+    line: int | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -37,6 +38,7 @@ class Finding:
             "explanation": self.explanation,
             "sample_index": self.sample_index,
             "sample_id": self.sample_id,
+            "line": self.line,
             "metadata": self.metadata,
         }
 
@@ -49,8 +51,8 @@ class ScanRun:
     split: str | None
     total_samples: int
     findings: list[Finding]
-    source_type: str = "hf"        # "hf" | "inspect_task"
-    revision: str | None = None    # HF revision / commit SHA
+    source_type: str = "hf"  # "hf" | "inspect_task"
+    revision: str | None = None  # HF revision / commit SHA
 
     def by_scanner(self) -> dict[str, list[Finding]]:
         result: dict[str, list[Finding]] = {}

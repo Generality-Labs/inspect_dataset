@@ -1,8 +1,17 @@
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import { AuditView } from "./AuditView";
 import { useParams, useSearchParams } from "react-router-dom";
 import { useStore, getFilteredFindings } from "../store";
 import { fetchSampleDetail } from "../api";
 import type { SampleDetail, TriageStatus } from "../types";
+
+const markdownComponents = {
+  table: (props: React.ComponentProps<"table">) => (
+    <table className="table table-sm table-bordered w-auto" {...props} />
+  ),
+};
 
 export function FindingDetail() {
   const finding = useStore((s) => s.selectedFinding);
@@ -11,19 +20,33 @@ export function FindingDetail() {
   const setSelectedFinding = useStore((s) => s.setSelectedFinding);
   const [searchParams] = useSearchParams();
   const { slug } = useParams<{ slug: string }>();
+  const [showAudit, setShowAudit] = useState(false);
 
-  const [sampleDetail, setSampleDetail] = useState<SampleDetail | null>(null);
-  const [sampleLoading, setSampleLoading] = useState(false);
+  // Loaded detail is keyed by (slug, sample_index) so the current sample's
+  // detail and loading flag can be derived instead of set in the effect.
+  const [loaded, setLoaded] = useState<{
+    key: string;
+    detail: SampleDetail | null;
+  } | null>(null);
 
   useEffect(() => {
     if (finding == null || !slug) return;
-    setSampleDetail(null);
-    setSampleLoading(true);
+    let cancelled = false;
+    const key = `${slug}:${finding.sample_index}`;
     fetchSampleDetail(slug, finding.sample_index).then((d) => {
-      setSampleDetail(d);
-      setSampleLoading(false);
+      if (!cancelled) setLoaded({ key, detail: d });
     });
+    return () => {
+      cancelled = true;
+    };
   }, [finding?.sample_index, slug]);
+
+  const currentKey =
+    finding != null && slug ? `${slug}:${finding.sample_index}` : null;
+  const sampleDetail =
+    loaded && loaded.key === currentKey ? loaded.detail : null;
+  const sampleLoading =
+    currentKey != null && (loaded == null || loaded.key !== currentKey);
 
   if (!finding) {
     return (
@@ -59,9 +82,19 @@ export function FindingDetail() {
     if (next !== idx) setSelectedFinding(filtered[next]);
   };
 
+  const sampleFindings = findings.filter(
+    (f) => f.sample_index === finding.sample_index,
+  );
+
   const allImages = [
-    ...(sampleDetail?.images ?? []).map((img) => ({ src: img.data_url, label: img.field })),
-    ...(sampleDetail?.files ?? []).map((f) => ({ src: f.data_url, label: f.name })),
+    ...(sampleDetail?.images ?? []).map((img) => ({
+      src: img.data_url,
+      label: img.field,
+    })),
+    ...(sampleDetail?.files ?? []).map((f) => ({
+      src: f.data_url,
+      label: f.name,
+    })),
   ];
 
   return (
@@ -69,6 +102,13 @@ export function FindingDetail() {
       className="border-start d-flex flex-column"
       style={{ width: 380, minWidth: 380, overflowY: "auto" }}
     >
+      {showAudit && sampleDetail && (
+        <AuditView
+          detail={sampleDetail}
+          findings={sampleFindings}
+          onClose={() => setShowAudit(false)}
+        />
+      )}
       {/* Finding header */}
       <div className="p-3 border-bottom">
         <div className="d-flex justify-content-between align-items-start mb-2">
@@ -119,8 +159,28 @@ export function FindingDetail() {
             </div>
             <div className="mb-2 small">
               <span className="text-body-secondary fw-semibold">A: </span>
-              <span className="font-monospace">{sampleDetail.answer}</span>
+              {sampleDetail.answer.includes("\n") ? (
+                <div className="border rounded p-2 mt-1 audit-markdown">
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    components={markdownComponents}
+                  >
+                    {sampleDetail.answer}
+                  </ReactMarkdown>
+                </div>
+              ) : (
+                <span className="font-monospace">{sampleDetail.answer}</span>
+              )}
             </div>
+            {(allImages.length > 0 || sampleDetail.answer.includes("\n")) && (
+              <button
+                className="btn btn-sm btn-outline-primary mb-2"
+                onClick={() => setShowAudit(true)}
+              >
+                <i className="bi bi-layout-three-columns me-1" />
+                Audit view
+              </button>
+            )}
             {allImages.map((img) => (
               <img
                 key={img.label}

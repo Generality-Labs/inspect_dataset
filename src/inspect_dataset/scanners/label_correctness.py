@@ -42,20 +42,16 @@ def _make_scanner(model_name: str, concurrency: int = 20) -> LLMScannerDef:
             answer = str(record.get(fields.answer, "") or "").strip()
             if not question or not answer:
                 continue
-            prompts.append(
-                _PROMPT_TEMPLATE.format(question=question, answer=answer)
-            )
+            prompts.append(_PROMPT_TEMPLATE.format(question=question, answer=answer))
             indices.append(i)
 
         if not prompts:
             return []
 
-        judgments: list[LLMJudgment] = await judge_batch(
-            model, prompts, concurrency=concurrency
-        )
+        judgments: list[LLMJudgment] = await judge_batch(model, prompts, concurrency=concurrency)
 
         findings = []
-        for idx, judgment in zip(indices, judgments):
+        for idx, judgment in zip(indices, judgments, strict=True):
             if judgment.flagged:
                 record = records[idx]
                 question = str(record.get(fields.question, "") or "").strip()

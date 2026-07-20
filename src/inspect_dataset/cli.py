@@ -1,22 +1,67 @@
 from __future__ import annotations
 
 import re
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 import click
 from dotenv import load_dotenv
 from rich.console import Console
 
-from inspect_dataset.loader import load_hf_dataset, load_task_from_spec, resolve_fields
+from inspect_dataset.loader import (
+    load_hf_dataset,
+    load_local_samples,
+    load_task_from_spec,
+    resolve_fields,
+)
 from inspect_dataset.report import print_report, save_findings
-from inspect_dataset.scanner import AnyScanner, run_scanners, run_scanners_async
+from inspect_dataset.scanner import (
+    AnyScanner,
+    ScannerDef,
+    run_scanners,
+    run_scanners_async,
+)
 from inspect_dataset.scanners import (
     ALL_SCANNER_NAMES,
     BUILTIN_SCANNER_NAMES,
     BUILTIN_SCANNERS,
     LLM_SCANNER_FACTORIES,
 )
+
+
+def _load_scanner_module(module_name: str) -> list[ScannerDef]:
+    """Import a module and collect its ScannerDef objects.
+
+    A module-level ``SCANNERS`` list takes precedence; otherwise every public
+    attribute that is a ``ScannerDef`` is collected.
+    """
+    import importlib
+
+    try:
+        module = importlib.import_module(module_name)
+    except ImportError as e:
+        raise click.BadParameter(
+            f"Could not import scanner module {module_name!r}: {e}",
+            param_hint="--scanner-module",
+        ) from e
+
+    declared = getattr(module, "SCANNERS", None)
+    if declared is not None:
+        defs = [s for s in declared if isinstance(s, ScannerDef)]
+    else:
+        defs = [
+            obj
+            for name in dir(module)
+            if not name.startswith("_")
+            for obj in [getattr(module, name)]
+            if isinstance(obj, ScannerDef)
+        ]
+    if not defs:
+        raise click.BadParameter(
+            f"No ScannerDef objects found in module {module_name!r}",
+            param_hint="--scanner-module",
+        )
+    return defs
 
 
 @click.group()
@@ -30,9 +75,7 @@ def cli() -> None:
 
 @cli.command()
 @click.argument("dataset")
-@click.option(
-    "--split", default="train", show_default=True, help="Dataset split to load."
-)
+@click.option("--split", default="train", show_default=True, help="Dataset split to load.")
 @click.option("--revision", default=None, help="Dataset revision / commit SHA to pin.")
 @click.option(
     "--question-field",
@@ -52,7 +95,10 @@ def cli() -> None:
 @click.option(
     "--image-field",
     default=None,
-    help="Column name for images. Used by duplicate_questions to distinguish same-question/different-image pairs from true duplicates.",
+    help=(
+        "Column name for images. Used by duplicate_questions to distinguish "
+        "same-question/different-image pairs from true duplicates."
+    ),
 )
 @click.option(
     "--scanners",
@@ -61,6 +107,15 @@ def cli() -> None:
         "Comma-separated list of scanners to run. "
         f"Available: {', '.join(sorted(ALL_SCANNER_NAMES))}. "
         "Defaults to all static scanners (LLM scanners require --model)."
+    ),
+)
+@click.option(
+    "--scanner-module",
+    "scanner_modules",
+    multiple=True,
+    help=(
+        "Python module providing extra scanners (a module-level SCANNERS list, "
+        "or any ScannerDef attributes). Repeatable."
     ),
 )
 @click.option(
@@ -80,13 +135,26 @@ def cli() -> None:
     show_default=True,
     help="Threshold for the answer_length scanner.",
 )
+@click.option(
+    "--files-root",
+    default=None,
+    type=click.Path(exists=True, file_okay=False),
+    help=(
+        "Directory of per-sample extraction artifacts (<files-root>/<sample_id>/ "
+        "with tool text outputs). Enables the cross-artifact scanners "
+        "text_layer_recall and numeric_provenance."
+    ),
+)
 @click.option("--limit", default=None, type=int, help="Cap number of samples loaded.")
 @click.option(
     "-o",
     "--output-dir",
     default=None,
     type=click.Path(),
-    help="Save findings JSON + REPORT.md to this directory (default: findings/<dataset>_<YYYY-MM-DDTHH-MM-SS>).",
+    help=(
+        "Save findings JSON + REPORT.md to this directory "
+        "(default: findings/<dataset>_<YYYY-MM-DDTHH-MM-SS>)."
+    ),
 )
 def scan(
     dataset: str,
@@ -97,12 +165,14 @@ def scan(
     id_field: str | None,
     image_field: str | None,
     scanners: str | None,
+    scanner_modules: tuple[str, ...],
     model: str | None,
     max_answer_words: int,
+    files_root: str | None,
     limit: int | None,
     output_dir: str | None,
 ) -> None:
-    """Scan a dataset for quality issues.
+    r"""Scan a dataset for quality issues.
 
     DATASET is one of:
 
@@ -111,25 +181,33 @@ def scan(
       - An inspect_ai registry name:   inspect_evals/medqa
       - A file + task name:            path/to/task.py@task_fn
       - A module + task name:          inspect_evals.medqa@medqa
+      - A local annotation directory:  path/to/data/samples/
     """
     console = Console()
+
+    # Plugin scanners from --scanner-module
+    plugin_scanners: list[ScannerDef] = []
+    for module_name in scanner_modules:
+        plugin_scanners.extend(_load_scanner_module(module_name))
+    plugin_by_name = {s.name: s for s in plugin_scanners}
+    available_names = ALL_SCANNER_NAMES | set(plugin_by_name)
 
     # Resolve scanners
     scanner_list: list[AnyScanner]
     if scanners:
         names = [n.strip() for n in scanners.split(",")]
-        unknown = [n for n in names if n not in ALL_SCANNER_NAMES]
+        unknown = [n for n in names if n not in available_names]
         if unknown:
             raise click.BadParameter(
                 f"Unknown scanner(s): {', '.join(unknown)}. "
-                f"Available: {', '.join(sorted(ALL_SCANNER_NAMES))}",
+                f"Available: {', '.join(sorted(available_names))}",
                 param_hint="--scanners",
             )
-        static_names = [n for n in names if n in BUILTIN_SCANNER_NAMES]
+        static_names = [n for n in names if n in BUILTIN_SCANNER_NAMES or n in plugin_by_name]
         llm_names = [n for n in names if n in LLM_SCANNER_FACTORIES]
-        scanner_list = [BUILTIN_SCANNER_NAMES[n] for n in static_names]
+        scanner_list = [BUILTIN_SCANNER_NAMES.get(n) or plugin_by_name[n] for n in static_names]
     else:
-        scanner_list = list(BUILTIN_SCANNERS)
+        scanner_list = [*BUILTIN_SCANNERS, *plugin_scanners]
         llm_names = list(LLM_SCANNER_FACTORIES) if model else []
 
     # Instantiate LLM scanners if --model provided
@@ -155,30 +233,50 @@ def scan(
             for s in scanner_list
         ]
 
-    # Detect inspect_ai task spec.
+    # Detect the source type.
+    # - An existing directory → local annotation directory
     # - "@" present → always a task spec (module@fn or file@fn)
     # - "package/task" with no "@" → task if "package" is an installed Python
     #   package (importlib.util.find_spec returns non-None); HF slugs like
     #   "owner/dataset" have no corresponding Python package.
     import importlib.util as _ilu
 
-    is_task = "@" in dataset or (
-        "/" in dataset and _ilu.find_spec(dataset.split("/")[0]) is not None
+    is_local = Path(dataset).is_dir()
+    is_task = not is_local and (
+        "@" in dataset or ("/" in dataset and _ilu.find_spec(dataset.split("/")[0]) is not None)
     )
+    resolved_split: str | None = split
 
-    if is_task:
+    if is_local:
+        dataset = str(Path(dataset).resolve())
+        console.print(f"Loading local samples from [bold]{dataset}[/bold]...")
+        records, fields = load_local_samples(dataset, limit=limit)
+        resolved_split = None
+        if question_field or answer_field or id_field:
+            fields = resolve_fields(records, question_field, answer_field, id_field, image_field)
+    elif is_task:
         console.print(f"Loading inspect_ai task [bold]{dataset}[/bold]...")
         records, fields = load_task_from_spec(dataset, limit=limit)
         # Allow field overrides even on the task path
         if question_field or answer_field or id_field:
-            fields = resolve_fields(
-                records, question_field, answer_field, id_field, image_field
-            )
+            fields = resolve_fields(records, question_field, answer_field, id_field, image_field)
     else:
         console.print(f"Loading [bold]{dataset}[/bold] split=[bold]{split}[/bold]...")
         records = load_hf_dataset(dataset, split=split, revision=revision, limit=limit)
-        fields = resolve_fields(
-            records, question_field, answer_field, id_field, image_field
+        fields = resolve_fields(records, question_field, answer_field, id_field, image_field)
+
+    if files_root is not None:
+        from inspect_dataset.scanner import get_sample_id as _gsid
+
+        root = Path(files_root)
+        attached = 0
+        for idx, record in enumerate(records):
+            sample_dir = root / str(_gsid(record, fields, idx))
+            if sample_dir.is_dir():
+                record["__artifacts_dir__"] = str(sample_dir)
+                attached += 1
+        console.print(
+            f"  Artifacts: {attached}/{len(records)} samples have a directory under {root}"
         )
 
     console.print(f"  Loaded {len(records):,} samples.")
@@ -196,7 +294,7 @@ def scan(
             f"(model: [bold]{model}[/bold])"
         )
 
-    source_type = "inspect_task" if is_task else "hf"
+    source_type = "local" if is_local else ("inspect_task" if is_task else "hf")
 
     if llm_scanners:
         import asyncio
@@ -207,7 +305,7 @@ def scan(
                 fields,
                 all_scanners,
                 dataset_name=dataset,
-                split=split,
+                split=resolved_split,
                 source_type=source_type,
                 revision=revision,
             )
@@ -218,7 +316,7 @@ def scan(
             fields,
             scanner_list,
             dataset_name=dataset,
-            split=split,
+            split=resolved_split,
             source_type=source_type,
             revision=revision,
         )
@@ -226,12 +324,19 @@ def scan(
     print_report(run, console=console)
 
     if output_dir is None:
-        slug = re.sub(r"[^a-z0-9]+", "-", dataset.split("/")[-1].lower()).strip("-")
-        timestamp = datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
+        base = Path(dataset).resolve().name if is_local else dataset.split("/")[-1]
+        slug = re.sub(r"[^a-z0-9]+", "-", base.lower()).strip("-")
+        timestamp = datetime.now(UTC).strftime("%Y-%m-%dT%H-%M-%S")
         output_dir = f"findings/{slug}_{timestamp}"
 
     out = Path(output_dir)
-    save_findings(run, out, records=records, fields=fields)
+    save_findings(
+        run,
+        out,
+        records=records,
+        fields=fields,
+        files_root=str(Path(files_root).resolve()) if files_root else None,
+    )
     console.print(f"Findings saved to [bold]{out}[/bold]")
 
 
@@ -250,7 +355,7 @@ def list_tasks() -> None:
         raise click.ClickException(
             "inspect_ai is required for this command. "
             "Install it with: pip install 'inspect-dataset[inspect]'"
-        )
+        ) from None
 
     ensure_entry_points()
     tasks = registry_find(lambda info: info.type == "task")
@@ -336,7 +441,7 @@ def _resolve_findings_dirs(paths: tuple[str, ...]) -> list[str]:
     help="Don't automatically open the browser.",
 )
 def view(findings_dirs: tuple[str, ...], port: int, no_open: bool) -> None:
-    """Launch the interactive dataset explorer.
+    r"""Launch the interactive dataset explorer.
 
     When called without arguments, opens the explorer home screen where you can
     browse cached HuggingFace datasets and installed inspect tasks.
@@ -358,7 +463,7 @@ def view(findings_dirs: tuple[str, ...], port: int, no_open: bool) -> None:
     """
     import webbrowser
 
-    from inspect_dataset._view.server import run_server
+    from inspect_dataset._view.server import create_app, run_server
 
     console = Console()
 
@@ -371,6 +476,12 @@ def view(findings_dirs: tuple[str, ...], port: int, no_open: bool) -> None:
                 "Each directory must contain a scan_summary.json file. "
                 "Run `inspect-dataset scan ... -o <dir>` first."
             )
+
+    dir_paths: list[str | Path] = list(dirs)
+    try:
+        create_app(dir_paths)  # validate before starting
+    except FileNotFoundError as e:
+        raise click.ClickException(str(e)) from e
 
     url = f"http://localhost:{port}"
     if dirs:

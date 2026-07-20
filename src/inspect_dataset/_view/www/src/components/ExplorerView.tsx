@@ -6,11 +6,7 @@ import {
   ModuleRegistry,
   themeQuartz,
 } from "ag-grid-community";
-import type {
-  ColDef,
-  GridApi,
-  ICellRendererParams,
-} from "ag-grid-community";
+import type { ColDef, GridApi, ICellRendererParams } from "ag-grid-community";
 import { useStore } from "../store";
 import {
   fetchExplorerRecord,
@@ -31,10 +27,18 @@ ModuleRegistry.registerModules([AllCommunityModule]);
 
 function CellRenderer({ value }: { value: CellValue }) {
   if (value === null || value === undefined) {
-    return <span className="fst-italic" style={{ opacity: 0.55 }}>null</span>;
+    return (
+      <span className="fst-italic" style={{ opacity: 0.55 }}>
+        null
+      </span>
+    );
   }
   if (value === "") {
-    return <span className="fst-italic" style={{ opacity: 0.55 }}>empty</span>;
+    return (
+      <span className="fst-italic" style={{ opacity: 0.55 }}>
+        empty
+      </span>
+    );
   }
   if (typeof value === "object" && !Array.isArray(value)) {
     const obj = value as Record<string, unknown>;
@@ -72,7 +76,9 @@ function CellRenderer({ value }: { value: CellValue }) {
   }
   if (Array.isArray(value)) {
     return (
-      <span className="small" style={{ opacity: 0.7 }}>[{value.length} items]</span>
+      <span className="small" style={{ opacity: 0.7 }}>
+        [{value.length} items]
+      </span>
     );
   }
   const str = String(value);
@@ -140,7 +146,8 @@ function SchemaPanel({
             <div className="small text-body-secondary">
               {f.null_count > 0 && (
                 <span className="me-2">
-                  {f.null_count} null ({Math.round((f.null_count / f.total) * 100)}%)
+                  {f.null_count} null (
+                  {Math.round((f.null_count / f.total) * 100)}%)
                 </span>
               )}
               {f.unique_count !== undefined && (
@@ -181,17 +188,27 @@ function RecordDetailPanel({
   hasPrev: boolean;
   hasNext: boolean;
 }) {
-  const [detail, setDetail] = useState<ExploreRecordDetail | null>(null);
-  const [loading, setLoading] = useState(false);
+  // Loaded detail is keyed by (sessionId, idx) so it (and the loading flag)
+  // can be derived instead of set synchronously in the effect.
+  const [loaded, setLoaded] = useState<{
+    key: string;
+    detail: ExploreRecordDetail | null;
+  } | null>(null);
 
   useEffect(() => {
-    setDetail(null);
-    setLoading(true);
+    let cancelled = false;
+    const key = `${sessionId}:${idx}`;
     fetchExplorerRecord(sessionId, idx).then((d) => {
-      setDetail(d);
-      setLoading(false);
+      if (!cancelled) setLoaded({ key, detail: d });
     });
+    return () => {
+      cancelled = true;
+    };
   }, [sessionId, idx]);
+
+  const currentKey = `${sessionId}:${idx}`;
+  const detail = loaded && loaded.key === currentKey ? loaded.detail : null;
+  const loading = loaded === null || loaded.key !== currentKey;
 
   return (
     <div
@@ -203,9 +220,7 @@ function RecordDetailPanel({
         <button className="btn-close" onClick={onClose} aria-label="Close" />
       </div>
 
-      {loading && (
-        <div className="p-3 text-body-secondary small">Loading…</div>
-      )}
+      {loading && <div className="p-3 text-body-secondary small">Loading…</div>}
 
       {detail && (
         <div className="flex-grow-1" style={{ overflowY: "auto" }}>
@@ -324,9 +339,7 @@ function FieldValue({ value }: { value: CellValue }) {
       </details>
     );
   }
-  return (
-    <span style={{ whiteSpace: "pre-wrap" }}>{str}</span>
-  );
+  return <span style={{ whiteSpace: "pre-wrap" }}>{str}</span>;
 }
 
 // ── Main explorer view ──────────────────────────────────────────────────────
@@ -366,9 +379,13 @@ export function ExplorerView() {
     }
   }, [sid, explorerSchema, explorerSession, navigate]);
 
-  // Load first page of records
+  // Load first page of records. Rows accumulate across this effect and the
+  // paginated loadMore callback below, so (unlike the sibling detail-fetch
+  // effects in this file) loading/error can't be derived from a single keyed
+  // result — they're reset here deliberately when the session changes.
   useEffect(() => {
     if (!sid) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoadingRows(true);
     setRowError(null);
     fetchExplorerRecords(sid, 0, PAGE_SIZE)
@@ -494,7 +511,10 @@ export function ExplorerView() {
       {/* Main content */}
       <div className="d-flex flex-grow-1" style={{ minHeight: 0 }}>
         {/* Table */}
-        <div className="flex-grow-1 d-flex flex-column" style={{ minHeight: 0 }}>
+        <div
+          className="flex-grow-1 d-flex flex-column"
+          style={{ minHeight: 0 }}
+        >
           {loadingRows && rows.length === 0 ? (
             <div className="d-flex align-items-center justify-content-center flex-grow-1 text-body-secondary">
               <div className="spinner-border me-2" />
@@ -514,7 +534,10 @@ export function ExplorerView() {
                     const idx = e.data?.__index;
                     if (idx !== undefined) setSelectedIdx(idx);
                   }}
-                  rowSelection={{ mode: "singleRow", enableClickSelection: true }}
+                  rowSelection={{
+                    mode: "singleRow",
+                    enableClickSelection: true,
+                  }}
                   getRowStyle={(p) =>
                     p.data?.__index === selectedIdx
                       ? { background: "var(--bs-primary-bg-subtle)" }
@@ -539,7 +562,8 @@ export function ExplorerView() {
                     ) : (
                       <i className="bi bi-plus-circle me-1" />
                     )}
-                    Load {Math.min(PAGE_SIZE, total - offset).toLocaleString()} more
+                    Load {Math.min(PAGE_SIZE, total - offset).toLocaleString()}{" "}
+                    more
                   </button>
                 </div>
               )}

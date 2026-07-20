@@ -10,12 +10,16 @@ from inspect_dataset.scanners.answerability import (
 from inspect_dataset.scanners.binary_question_ratio import binary_question_ratio
 from inspect_dataset.scanners.duplicate_questions import duplicate_questions
 from inspect_dataset.scanners.encoding_issues import encoding_issues
+from inspect_dataset.scanners.extraction_artifacts import extraction_artifacts
 from inspect_dataset.scanners.forced_choice_leakage import forced_choice_leakage
 from inspect_dataset.scanners.image_mime_type import image_mime_type
 from inspect_dataset.scanners.inconsistent_format import inconsistent_format
 from inspect_dataset.scanners.label_correctness import (
     _make_scanner as _make_label_correctness,
 )
+from inspect_dataset.scanners.markdown_integrity import markdown_integrity
+from inspect_dataset.scanners.numeric_provenance import numeric_provenance
+from inspect_dataset.scanners.text_layer_recall import text_layer_recall
 
 BUILTIN_SCANNERS: list[ScannerDef] = [
     answer_length,
@@ -26,6 +30,10 @@ BUILTIN_SCANNERS: list[ScannerDef] = [
     encoding_issues,
     binary_question_ratio,
     image_mime_type,
+    markdown_integrity,
+    extraction_artifacts,
+    text_layer_recall,
+    numeric_provenance,
 ]
 
 BUILTIN_SCANNER_NAMES: dict[str, ScannerDef] = {s.name: s for s in BUILTIN_SCANNERS}

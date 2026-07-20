@@ -72,11 +72,25 @@ export const useStore = create<AppState>((set, get) => ({
   setSelectedFinding: (finding) => set({ selectedFinding: finding }),
 
   startExplorerSession: async (source, sourceType, split, limit) => {
-    set({ explorerLoading: true, explorerError: null, explorerSession: null, explorerSchema: null });
+    set({
+      explorerLoading: true,
+      explorerError: null,
+      explorerSession: null,
+      explorerSchema: null,
+    });
     try {
-      const session = await loadExplorerSession(source, sourceType, split, limit);
+      const session = await loadExplorerSession(
+        source,
+        sourceType,
+        split,
+        limit,
+      );
       const schema = await fetchExplorerSchema(session.session_id);
-      set({ explorerSession: session, explorerSchema: schema, explorerLoading: false });
+      set({
+        explorerSession: session,
+        explorerSchema: schema,
+        explorerLoading: false,
+      });
       return session;
     } catch (e) {
       set({ explorerError: String(e), explorerLoading: false });
@@ -97,7 +111,12 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   loadDataset: async (slug: string) => {
-    set({ loading: true, error: null, currentSlug: slug, selectedFinding: null });
+    set({
+      loading: true,
+      error: null,
+      currentSlug: slug,
+      selectedFinding: null,
+    });
     try {
       const [summary, findings, samples] = await Promise.all([
         fetchSummary(slug),
@@ -141,9 +160,7 @@ export function getFilteredFindings(
 }
 
 /** Scanner name → finding count (from full findings list). */
-export function getScannerCounts(
-  findings: Finding[],
-): Record<string, number> {
+export function getScannerCounts(findings: Finding[]): Record<string, number> {
   const counts: Record<string, number> = {};
   for (const f of findings) {
     counts[f.scanner] = (counts[f.scanner] || 0) + 1;

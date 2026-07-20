@@ -57,5 +57,11 @@ export function useKeyboard() {
 
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [selectedFinding, findings, searchParams, triageFinding, setSelectedFinding]);
+  }, [
+    selectedFinding,
+    findings,
+    searchParams,
+    triageFinding,
+    setSelectedFinding,
+  ]);
 }

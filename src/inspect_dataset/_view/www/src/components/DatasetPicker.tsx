@@ -13,7 +13,8 @@ function SeverityPills({ bySeverity }: { bySeverity: Record<string, number> }) {
     .filter((s) => (bySeverity[s] ?? 0) > 0)
     .map((s) => ({ severity: s, count: bySeverity[s] }));
 
-  if (entries.length === 0) return <span className="text-body-secondary small">No findings</span>;
+  if (entries.length === 0)
+    return <span className="text-body-secondary small">No findings</span>;
 
   return (
     <span>
@@ -37,7 +38,9 @@ export function DatasetPicker({ datasets }: { datasets: DatasetInfo[] }) {
       </nav>
 
       <div className="container-fluid p-4" style={{ maxWidth: 900 }}>
-        <h5 className="mb-4 text-body-secondary">Select a dataset to explore</h5>
+        <h5 className="mb-4 text-body-secondary">
+          Select a dataset to explore
+        </h5>
         <div className="row g-3">
           {datasets.map((ds) => (
             <div className="col-md-4" key={ds.slug}>
@@ -47,9 +50,13 @@ export function DatasetPicker({ datasets }: { datasets: DatasetInfo[] }) {
                 style={{ cursor: "pointer" }}
               >
                 <div className="card-body">
-                  <h6 className="card-title fw-semibold mb-1">{ds.dataset_name}</h6>
+                  <h6 className="card-title fw-semibold mb-1">
+                    {ds.dataset_name}
+                  </h6>
                   {ds.split && (
-                    <div className="text-body-secondary small mb-2">[{ds.split}]</div>
+                    <div className="text-body-secondary small mb-2">
+                      [{ds.split}]
+                    </div>
                   )}
                   <div className="small mb-2 text-body-secondary">
                     {ds.total_samples.toLocaleString()} samples ·{" "}

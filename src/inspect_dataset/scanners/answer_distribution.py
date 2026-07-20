@@ -9,10 +9,7 @@ _IMBALANCE_THRESHOLD = 0.85  # flag if one answer accounts for ≥85% of all ans
 
 
 def _scan(records: list[Record], fields: FieldMap) -> list[Finding]:
-    answers = [
-        str(record.get(fields.answer, "") or "").strip().lower()
-        for record in records
-    ]
+    answers = [str(record.get(fields.answer, "") or "").strip().lower() for record in records]
     non_empty = [a for a in answers if a]
     if not non_empty:
         return []

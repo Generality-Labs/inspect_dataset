@@ -8,8 +8,12 @@ export function Header() {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
 
-  const confirmed = findings.filter((f) => f.triage_status === "confirmed").length;
-  const dismissed = findings.filter((f) => f.triage_status === "dismissed").length;
+  const confirmed = findings.filter(
+    (f) => f.triage_status === "confirmed",
+  ).length;
+  const dismissed = findings.filter(
+    (f) => f.triage_status === "dismissed",
+  ).length;
 
   return (
     <nav className="navbar navbar-expand bg-body-tertiary border-bottom px-3">
@@ -36,7 +40,9 @@ export function Header() {
           <span className="navbar-text me-auto">
             <span className="fw-semibold">{summary.dataset_name}</span>
             {summary.split && (
-              <span className="text-body-secondary ms-1">[{summary.split}]</span>
+              <span className="text-body-secondary ms-1">
+                [{summary.split}]
+              </span>
             )}
             <span className="text-body-secondary ms-2">
               {summary.total_samples.toLocaleString()} samples

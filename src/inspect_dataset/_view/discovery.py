@@ -58,7 +58,7 @@ def _dtype_to_simple(dtype: str, type_tag: str) -> str:
         return "int"
     if type_tag in ("Translation", "TranslationVariableLanguages"):
         return "dict"
-    if dtype in ("bool",):
+    if dtype == "bool":
         return "bool"
     if dtype in ("int8", "int16", "int32", "int64", "uint8", "uint16", "uint32"):
         return "int"
@@ -132,9 +132,7 @@ def fetch_hf_splits(
     if data is None:
         return None
     splits_data = data.get("splits", [])
-    return list(
-        {s["split"] for s in splits_data if isinstance(s, dict) and "split" in s}
-    )
+    return list({s["split"] for s in splits_data if isinstance(s, dict) and "split" in s})
 
 
 def list_cached_hf_datasets() -> list[dict[str, Any]]:
@@ -169,8 +167,7 @@ def list_cached_hf_datasets() -> list[dict[str, Any]]:
                     if (
                         f"/{split_name}-" in stem
                         or f"/{split_name}." in stem
-                        or stem.startswith(f"{split_name}-")
-                        or stem.startswith(f"{split_name}.")
+                        or stem.startswith((f"{split_name}-", f"{split_name}."))
                     ):
                         found.add(split_name)
         return sorted(found) or ["train"]
@@ -187,7 +184,7 @@ def list_cached_hf_datasets() -> list[dict[str, Any]]:
             "splits": splits,
             "last_modified": repo.last_modified,
         }
-        for repo, splits in zip(dataset_repos, splits_results)
+        for repo, splits in zip(dataset_repos, splits_results, strict=True)
     ]
     return result
 

@@ -1,7 +1,11 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useStore } from "../store";
-import { fetchCachedDatasets, fetchHfSchema, fetchInstalledTasks } from "../api";
+import {
+  fetchCachedDatasets,
+  fetchHfSchema,
+  fetchInstalledTasks,
+} from "../api";
 import type { CachedDataset, InstalledTask, SchemaField } from "../types";
 
 function formatBytes(bytes: number): string {
@@ -140,26 +144,41 @@ function SchemaPreview({
   onClose: () => void;
   onOpen: () => void;
 }) {
-  const [schema, setSchema] = useState<SchemaField[] | null>(null);
-  const [loading, setLoading] = useState(true);
+  // Loaded schema is keyed by repoId so it (and the loading flag) can be
+  // derived instead of set synchronously in the effect.
+  const [loaded, setLoaded] = useState<{
+    repoId: string;
+    schema: SchemaField[] | null;
+  } | null>(null);
 
   useEffect(() => {
-    setLoading(true);
+    let cancelled = false;
     fetchHfSchema(repoId).then((info) => {
-      setSchema(info?.schema ?? null);
-      setLoading(false);
+      if (!cancelled) setLoaded({ repoId, schema: info?.schema ?? null });
     });
+    return () => {
+      cancelled = true;
+    };
   }, [repoId]);
 
+  const schema = loaded && loaded.repoId === repoId ? loaded.schema : null;
+  const loading = loaded === null || loaded.repoId !== repoId;
+
   return (
-    <div className="card border shadow" style={{ minWidth: 260, maxWidth: 320 }}>
+    <div
+      className="card border shadow"
+      style={{ minWidth: 260, maxWidth: 320 }}
+    >
       <div className="card-header d-flex justify-content-between align-items-center py-2">
         <span className="small fw-semibold text-truncate me-2" title={repoId}>
           {repoId}
         </span>
         <button className="btn-close btn-sm" onClick={onClose} />
       </div>
-      <div className="card-body py-2 px-3" style={{ maxHeight: 280, overflowY: "auto" }}>
+      <div
+        className="card-body py-2 px-3"
+        style={{ maxHeight: 280, overflowY: "auto" }}
+      >
         {loading && (
           <div className="text-center py-2 text-body-secondary small">
             <span className="spinner-border spinner-border-sm me-1" />
@@ -174,10 +193,17 @@ function SchemaPreview({
         {!loading && schema && (
           <dl className="mb-0">
             {schema.map((f) => (
-              <div key={f.name} className="d-flex justify-content-between align-items-center mb-1">
-                <dt className="small mb-0 fw-normal text-truncate me-2">{f.name}</dt>
+              <div
+                key={f.name}
+                className="d-flex justify-content-between align-items-center mb-1"
+              >
+                <dt className="small mb-0 fw-normal text-truncate me-2">
+                  {f.name}
+                </dt>
                 <dd className="mb-0 flex-shrink-0">
-                  <span className={`badge small ${TYPE_BADGE[f.type] ?? "bg-secondary"}`}>
+                  <span
+                    className={`badge small ${TYPE_BADGE[f.type] ?? "bg-secondary"}`}
+                  >
                     {f.hf_type ?? f.type}
                   </span>
                 </dd>
@@ -322,23 +348,24 @@ function CachedDatasetsList({
         </div>
 
         {/* Schema preview card */}
-        {previewRepo && (() => {
-          const ds = filtered.find((d) => d.repo_id === previewRepo);
-          const split = ds
-            ? (selectedSplits[previewRepo] ?? ds.splits[0] ?? "train")
-            : "train";
-          return (
-            <SchemaPreview
-              key={previewRepo}
-              repoId={previewRepo}
-              split={split}
-              onClose={() => setPreviewRepo(null)}
-              onOpen={() => {
-                if (ds) onSelect(ds, split);
-              }}
-            />
-          );
-        })()}
+        {previewRepo &&
+          (() => {
+            const ds = filtered.find((d) => d.repo_id === previewRepo);
+            const split = ds
+              ? (selectedSplits[previewRepo] ?? ds.splits[0] ?? "train")
+              : "train";
+            return (
+              <SchemaPreview
+                key={previewRepo}
+                repoId={previewRepo}
+                split={split}
+                onClose={() => setPreviewRepo(null)}
+                onOpen={() => {
+                  if (ds) onSelect(ds, split);
+                }}
+              />
+            );
+          })()}
       </div>
     </>
   );
@@ -399,7 +426,10 @@ function InstalledTasksList({
         value={search}
         onChange={(e) => setSearch(e.target.value)}
       />
-      <div style={{ maxHeight: 320, overflowY: "auto" }} className="border rounded">
+      <div
+        style={{ maxHeight: 320, overflowY: "auto" }}
+        className="border rounded"
+      >
         {Object.entries(filteredPkgs).map(([pkg, pkgTasks]) => (
           <div key={pkg}>
             <div className="px-3 py-1 bg-body-tertiary border-bottom small fw-semibold text-body-secondary">
@@ -467,7 +497,12 @@ export function ExplorerHome() {
     split: string,
     limit?: number,
   ) => {
-    const session = await startExplorerSession(source, sourceType, split, limit);
+    const session = await startExplorerSession(
+      source,
+      sourceType,
+      split,
+      limit,
+    );
     if (session) {
       navigate(`/explore/${session.session_id}`);
     }
@@ -562,14 +597,10 @@ export function ExplorerHome() {
               <InstalledTasksList
                 tasks={installedTasks}
                 loading={tasksLoading}
-                onSelect={(t) =>
-                  handleLoad(t.name, "inspect_task", "train")
-                }
+                onSelect={(t) => handleLoad(t.name, "inspect_task", "train")}
               />
             )}
-            {activeTab === "manual" && (
-              <ManualEntryForm onLoad={handleLoad} />
-            )}
+            {activeTab === "manual" && <ManualEntryForm onLoad={handleLoad} />}
           </div>
         </div>
       </div>

@@ -42,7 +42,7 @@ def get_model(model_name: str) -> Any:
         raise ImportError(
             "inspect_ai is required for LLM scanners. "
             "Install it with: pip install 'inspect-dataset[inspect]'"
-        )
+        ) from None
     return _get_model(model_name)
 
 
@@ -74,9 +74,7 @@ async def judge_batch(
     async def _judge_one(prompt: str) -> LLMJudgment:
         async with sem:
             try:
-                result = await model.generate(
-                    [system_msg, ChatMessageUser(content=prompt)]
-                )
+                result = await model.generate([system_msg, ChatMessageUser(content=prompt)])
                 text = result.completion.strip()
                 first_line = text.split("\n")[0].strip().upper()
                 flagged = first_line.startswith("YES")

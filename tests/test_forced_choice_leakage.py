@@ -37,7 +37,9 @@ def test_right_option_matched():
 
 
 def test_case_insensitive_match():
-    findings = forced_choice_leakage(rec("is this supratentorial or infratentorial?", "Supratentorial"), FIELDS)
+    findings = forced_choice_leakage(
+        rec("is this supratentorial or infratentorial?", "Supratentorial"), FIELDS
+    )
     assert len(findings) == 1
 
 
@@ -49,7 +51,7 @@ def test_article_stripped_from_options():
 
 def test_multiple_records_only_matching_flagged():
     records = [
-        {"q": "is this an mri or ct?", "a": "mri"},   # flagged
+        {"q": "is this an mri or ct?", "a": "mri"},  # flagged
         {"q": "what is the diagnosis?", "a": "cancer"},  # not flagged
         {"q": "is this normal or abnormal?", "a": "yes"},  # not flagged (answer not an option)
     ]

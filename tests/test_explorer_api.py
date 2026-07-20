@@ -139,9 +139,7 @@ async def test_explore_records_endpoint(server):
     assert load_resp.status == 200
     session_id = (await load_resp.json())["session_id"]
 
-    records_resp = await get(
-        server, f"/api/explore/{session_id}/records?offset=0&limit=5"
-    )
+    records_resp = await get(server, f"/api/explore/{session_id}/records?offset=0&limit=5")
     assert records_resp.status == 200
     body = await records_resp.json()
     assert body["offset"] == 0

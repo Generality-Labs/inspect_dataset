@@ -115,6 +115,11 @@ export interface SampleFile {
   data_url: string;
 }
 
+export interface ToolOutput {
+  name: string;
+  text: string;
+}
+
 export interface SampleDetail {
   index: number;
   question: string;
@@ -122,6 +127,8 @@ export interface SampleDetail {
   id?: string | number | null;
   images: SampleImage[];
   files: SampleFile[];
+  tool_outputs?: ToolOutput[];
+  line_offset?: number;
 }
 
 export interface Finding {
@@ -132,6 +139,7 @@ export interface Finding {
   explanation: string;
   sample_index: number;
   sample_id: string | number | null;
+  line?: number | null;
   metadata: Record<string, unknown>;
   triage_status: TriageStatus;
 }

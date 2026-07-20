@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import json
 from pathlib import Path
 from typing import Any
 
@@ -59,7 +60,7 @@ def load_hf_dataset(
         raise ImportError(
             "The 'datasets' package is required to load HuggingFace datasets. "
             "Install it with: pip install datasets"
-        )
+        ) from None
 
     from datasets import Image as HFImage
 
@@ -81,6 +82,94 @@ def load_hf_dataset(
     return [dict(row) for row in dataset]
 
 
+def split_frontmatter(text: str) -> tuple[dict[str, str], str, int]:
+    """Split YAML frontmatter from a markdown document.
+
+    Returns ``(frontmatter, body, body_offset)`` where ``body_offset`` is the
+    number of lines removed from the top of the file, so line numbers in the
+    body can be mapped back to file line numbers.
+
+    Only flat ``key: value`` frontmatter is parsed; anything else is kept as a
+    raw string value.
+    """
+    lines = text.splitlines(keepends=True)
+    if not lines or lines[0].strip() != "---":
+        return {}, text, 0
+    for i in range(1, len(lines)):
+        if lines[i].strip() == "---":
+            fm: dict[str, str] = {}
+            for raw in lines[1:i]:
+                key, sep, value = raw.partition(":")
+                if sep:
+                    fm[key.strip()] = value.strip()
+            body_start = i + 1
+            if body_start < len(lines) and lines[body_start].strip() == "":
+                body_start += 1
+            return fm, "".join(lines[body_start:]), body_start
+    return {}, text, 0
+
+
+def load_local_samples(path: str | Path, limit: int | None = None) -> tuple[list[Record], FieldMap]:
+    """Load a directory of JSON annotation files with markdown sidecars.
+
+    Supports a common annotation layout for document benchmarks:
+    each ``*.json`` file is one sample; a field ending in ``_markdown_path``
+    points to a sidecar Markdown gold file (relative to the JSON file), whose
+    YAML frontmatter is stripped into ``__frontmatter__``. The markdown body
+    becomes the answer; ``__md_body_offset__`` records how many leading lines
+    were stripped so scanner findings can report real file line numbers.
+
+    Samples without a sidecar fall back to an embedded
+    ``ground_truth_table.markdown`` string when present.
+    """
+    directory = Path(path)
+    json_files = sorted(p for p in directory.glob("*.json") if p.name != "provenance.json")
+    records: list[Record] = []
+    for json_path in json_files:
+        try:
+            data = json.loads(json_path.read_text())
+        except json.JSONDecodeError as e:
+            raise ValueError(f"{json_path} is not valid JSON: {e}") from e
+        if not isinstance(data, dict):
+            continue
+        record: Record = dict(data)
+        record["__json_path__"] = str(json_path)
+
+        md_rel = next(
+            (v for k, v in data.items() if k.endswith("_markdown_path") and isinstance(v, str)),
+            None,
+        )
+        answer = ""
+        if md_rel is not None:
+            md_path = json_path.parent / md_rel
+            record["__markdown_path__"] = str(md_path)
+            if md_path.exists():
+                fm, body, offset = split_frontmatter(md_path.read_text())
+                record["__frontmatter__"] = fm
+                record["__md_body_offset__"] = offset
+                answer = body
+        else:
+            table = data.get("ground_truth_table")
+            if isinstance(table, dict) and isinstance(table.get("markdown"), str):
+                answer = table["markdown"]
+        record["gold_markdown"] = answer
+
+        parts = [str(data[k]) for k in ("task_type", "element_type") if data.get(k)]
+        source = data.get("pdf_path") or data.get("source")
+        if source:
+            page = data.get("page_number")
+            parts.append(f"{source}#page={page}" if page is not None else str(source))
+        record["__task__"] = " ".join(parts) or json_path.stem
+        records.append(record)
+        if limit is not None and len(records) >= limit:
+            break
+
+    if not records:
+        raise ValueError(f"No JSON annotation files found in {directory}")
+    id_field = "id" if all("id" in r for r in records) else None
+    return records, FieldMap(question="__task__", answer="gold_markdown", id=id_field)
+
+
 def _input_to_str(input: Any) -> str:
     """Extract question text from an inspect_ai Sample.input value.
 
@@ -91,21 +180,34 @@ def _input_to_str(input: Any) -> str:
         return input
     if isinstance(input, list) and input:
         for msg in reversed(input):
-            role = getattr(msg, "role", None) or (msg.get("role") if isinstance(msg, dict) else None)
+            role = getattr(msg, "role", None) or (
+                msg.get("role") if isinstance(msg, dict) else None
+            )
             if role == "user":
-                content = getattr(msg, "content", None) or (msg.get("content") if isinstance(msg, dict) else None)
+                content = getattr(msg, "content", None) or (
+                    msg.get("content") if isinstance(msg, dict) else None
+                )
                 if isinstance(content, str):
                     return content
                 if isinstance(content, list):
                     # ContentBlock list — join text parts
                     return " ".join(
-                        str(getattr(part, "text", "") or (part.get("text", "") if isinstance(part, dict) else ""))
+                        str(
+                            getattr(part, "text", "")
+                            or (part.get("text", "") if isinstance(part, dict) else "")
+                        )
                         for part in content
-                        if (getattr(part, "type", None) or (part.get("type") if isinstance(part, dict) else None)) == "text"
+                        if (
+                            getattr(part, "type", None)
+                            or (part.get("type") if isinstance(part, dict) else None)
+                        )
+                        == "text"
                     )
         # Fallback: stringify first message content
         msg = input[0]
-        content = getattr(msg, "content", None) or (msg.get("content") if isinstance(msg, dict) else None)
+        content = getattr(msg, "content", None) or (
+            msg.get("content") if isinstance(msg, dict) else None
+        )
         return str(content) if content is not None else ""
     return str(input)
 
@@ -173,13 +275,16 @@ def _find_task_in_module(module: Any, hint: str) -> Any:
 
     # hint resolved to a non-callable (e.g. a submodule) — scan for @task fns
     try:
-        from inspect_ai._util.registry import is_registry_object, registry_info as _rinfo
+        from inspect_ai._util.registry import is_registry_object
+        from inspect_ai._util.registry import registry_info as _rinfo
+
         task_fns = [
             obj
             for name in dir(module)
             if not name.startswith("_")
             for obj in [getattr(module, name, None)]
-            if obj is not None and callable(obj)
+            if obj is not None
+            and callable(obj)
             and is_registry_object(obj)
             and _rinfo(obj).type == "task"
         ]
@@ -189,9 +294,7 @@ def _find_task_in_module(module: Any, hint: str) -> Any:
     if len(task_fns) == 1:
         return task_fns[0]
     if len(task_fns) > 1:
-        names = ", ".join(
-            getattr(fn, "__name__", str(fn)) for fn in task_fns
-        )
+        names = ", ".join(getattr(fn, "__name__", str(fn)) for fn in task_fns)
         raise ValueError(
             f"Module {module.__name__!r} contains multiple tasks: {names}. "
             f"Specify one explicitly, e.g. {module.__name__}@<task_name>"
@@ -256,9 +359,8 @@ def load_task_from_spec(spec: str, limit: int | None = None) -> tuple[list[Recor
         from inspect_ai._eval.loader import load_task_spec as _inspect_load_task_spec
     except ImportError:
         raise ImportError(
-            "inspect_ai is required to load tasks by spec. "
-            "Install it with: pip install inspect-ai"
-        )
+            "inspect_ai is required to load tasks by spec. Install it with: pip install inspect-ai"
+        ) from None
 
     tasks = _inspect_load_task_spec(spec)
     if not tasks:
