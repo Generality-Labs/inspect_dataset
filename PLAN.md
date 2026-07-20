@@ -3,7 +3,7 @@
 A dataset quality scanner for AI evaluation datasets. Companion to [inspect-scout](https://github.com/meridian-labs/inspect-scout), which scans agent trajectories — inspect-dataset scans the underlying datasets themselves.
 
 **Organisation:** Arcadia\
-**Status:** v0.3.4 complete
+**Status:** v0.4.0 and v0.6.3 in progress
 
 ______________________________________________________________________
 
@@ -352,7 +352,7 @@ When `--output-dir` is omitted, `scan` now creates a directory automatically so 
 - [x] `cli.py`: derive default `output_dir` from dataset name + `datetime.now()` when `--output-dir` is not supplied; print the resolved path so the user knows where findings landed
 - [x] Ensure `findings/` parent is created if it doesn't exist (already handled by `save_findings` → `output_dir.mkdir(parents=True, exist_ok=True)`)
 
-### v0.4 — Dataset Explorer & Scanner Workbench (planned)
+### v0.4 — Dataset Explorer & Scanner Workbench (in progress)
 
 The v0.3 UI was built as a findings viewer — it requires a pre-existing scan output directory and is oriented around triaging findings. This phase reimagines the UI as a **dataset explorer first**, with scan results as an overlay rather than the entry point. The goal: a researcher should be able to open any dataset, understand its structure, poke around in the data, and then selectively run scanners — all without leaving the browser.
 
@@ -460,11 +460,25 @@ Generate a static HTML report from the current view state (filters, triage decis
 
 This is a significant expansion of the UI. Rough phasing:
 
-1. **v0.4.0 — Dataset picker + direct loading**: home screen lists cached HF datasets and installed inspect tasks; HF search bar; load without prior scan
+1. **v0.4.0 — Dataset picker + direct loading** ✓: home screen lists cached HF datasets and installed inspect tasks; direct entry tab; load without prior scan; HF API split detection; explorer session management; AG Grid data table with paginated records; record detail sidebar with image rendering; HuggingFace link in navbar; visible placeholders for null/empty values
 2. **v0.4.1 — Schema panel + rich rendering**: dataset overview statistics; intelligent field rendering in sample detail
 3. **v0.4.2 — Scanner workbench**: run scanners from UI; scope to filtered/selected rows; live results
 4. **v0.4.3 — Annotations, gallery view, comparative view**: extended interaction modes
 5. **v0.4.4 — Export + shareable reports**: static HTML export, filtered subset download
+
+### User Stories (backlog)
+
+Quick-fire ideas to pick up as time allows — not yet assigned to a version.
+
+- [ ] AAU, when I view a dataset grid, I can easily switch between each row being a single line with truncated text to each row being tall enough to show its full text (within a reasonable limit)
+- [ ] AAU, when I view the explorer, I can change between dark and light themes
+- [ ] AAU, when I click on an image thumbnail in the record sidebar, I see the image in a lightbox
+- [ ] AAU, when I go to the homepage, the list of cached HF datasets should load within 1 second
+- [ ] AAU, when I view a dataset grid, I can see which split I'm viewing and easily switch between available splits
+- [ ] AAU, when I go to the homepage, the list of datasets take up available vertical space
+- [ ] AAU, when I view a dataset grid that includes references images, the images should be shown in the record sidebar. Example: inspect_evals/zerobench, `question_images: ["images/74_0.png"]`
+- [ ] AAU, when I view a HF dataset grid, the schema view should include the raw json of the schema for debugging purposes
+- [ ] AAU, when I view a HF dataset grid, the record sidebar should include the type of each field from the schema
 
 ### v0.5 — Eval-informed scanners (inspect-scout integration, planned)
 

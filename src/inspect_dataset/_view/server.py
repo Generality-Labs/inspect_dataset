@@ -8,8 +8,9 @@ import json
 import logging
 import mimetypes
 import os
+import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from aiohttp import web
 
@@ -142,9 +143,8 @@ async def _load_records_cached(ds: dict[str, Any]) -> list[dict[str, Any]] | Non
     Returns None (without raising) if the dataset cannot be loaded —
     callers fall back to samples.json data without images.
     """
-    cached: list[dict[str, Any]] | None = ds.get("records_cache")
-    if cached is not None:
-        return cached
+    if ds.get("records_cache") is not None:
+        return cast(list[dict[str, Any]], ds["records_cache"])
 
     summary = ds["summary"]
     source_type: str = summary.get("source_type", "")
@@ -195,19 +195,105 @@ def _get_dataset(request: web.Request) -> dict[str, Any]:
     datasets: dict[str, Any] = request.app["datasets"]
     if slug not in datasets:
         raise web.HTTPNotFound(reason=f"Dataset '{slug}' not found.")
-    ds: dict[str, Any] = datasets[slug]
-    return ds
+    return cast(dict[str, Any], datasets[slug])
+
+
+def _infer_field_type(values: list[Any]) -> str:
+    """Infer a human-readable type label from a sample of field values."""
+    non_null = [v for v in values if v is not None]
+    if not non_null:
+        return "null"
+    v = non_null[0]
+    if isinstance(v, dict) and "bytes" in v:
+        return "image"
+    if isinstance(v, dict):
+        return "dict"
+    if isinstance(v, list):
+        return "list"
+    if isinstance(v, bool):
+        return "bool"
+    if isinstance(v, int):
+        return "int"
+    if isinstance(v, float):
+        return "float"
+    return "str"
+
+
+def _compute_schema(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Return per-field schema information from a list of records."""
+    if not records:
+        return []
+    columns = list(records[0].keys())
+    schema = []
+    n = len(records)
+    for col in columns:
+        if col.startswith("__"):
+            continue
+        values = [r.get(col) for r in records]
+        null_count = sum(1 for v in values if v is None)
+        field_type = _infer_field_type([v for v in values if v is not None][:5])
+
+        entry: dict[str, Any] = {
+            "name": col,
+            "type": field_type,
+            "null_count": null_count,
+            "total": n,
+        }
+
+        if field_type == "str":
+            lengths = [len(str(v)) for v in values if v is not None]
+            if lengths:
+                entry["min_length"] = min(lengths)
+                entry["max_length"] = max(lengths)
+                entry["avg_length"] = round(sum(lengths) / len(lengths), 1)
+            entry["unique_count"] = len({str(v) for v in values if v is not None})
+        elif field_type in ("int", "float"):
+            nums = [v for v in values if v is not None]
+            if nums:
+                entry["min"] = min(nums)
+                entry["max"] = max(nums)
+                entry["mean"] = round(sum(nums) / len(nums), 4)
+
+        schema.append(entry)
+    return schema
+
+
+def _record_to_json_safe(record: dict[str, Any]) -> dict[str, Any]:
+    """Convert a record to a JSON-serialisable dict.
+
+    Image bytes dicts are replaced with a placeholder so the frontend
+    knows an image is present without transmitting the raw bytes here.
+    Use the dedicated /record/:idx endpoint to get actual image data.
+    """
+    result: dict[str, Any] = {}
+    for key, val in record.items():
+        if key.startswith("__"):
+            continue
+        if isinstance(val, dict) and isinstance(val.get("bytes"), bytes):
+            result[key] = {"__type": "image", "path": val.get("path") or ""}
+        elif isinstance(val, bytes):
+            result[key] = {"__type": "bytes", "size": len(val)}
+        else:
+            try:
+                json.dumps(val)
+                result[key] = val
+            except (TypeError, ValueError):
+                result[key] = str(val)
+    return result
 
 
 def create_app(
-    findings_dirs: list[str | Path] | str | Path,
+    findings_dirs: list[str | Path] | str | Path | None = None,
 ) -> web.Application:
     """Create the aiohttp application for serving the explorer UI.
 
-    Accepts one or more findings directories.  A single string/Path is treated
-    as a list of one.
+    Accepts one or more findings directories, or None to start in
+    explorer-only mode (no pre-loaded datasets).
+    A single string/Path is treated as a list of one.
     """
-    if isinstance(findings_dirs, (str, Path)):
+    if findings_dirs is None:
+        findings_dirs = []
+    elif isinstance(findings_dirs, str | Path):
         findings_dirs = [findings_dirs]
 
     datasets: dict[str, Any] = {}
@@ -215,13 +301,11 @@ def create_app(
         ds = _load_dataset_dir(Path(d).resolve())
         datasets[ds["slug"]] = ds
 
-    if not datasets:
-        raise FileNotFoundError("No valid findings directories found.")
-
     app = web.Application()
     app["datasets"] = datasets
+    app["explorer_sessions"] = {}  # session_id -> ExplorerSession dict
 
-    # Dataset list
+    # Dataset list (findings-mode)
     app.router.add_get("/api/datasets", handle_datasets)
 
     # Per-dataset endpoints — all namespaced under /api/{slug}/
@@ -232,6 +316,17 @@ def create_app(
     app.router.add_post("/api/{slug}/triage", handle_post_triage)
     app.router.add_get("/api/{slug}/export", handle_export)
     app.router.add_get("/api/{slug}/sample/{idx}", handle_sample)
+
+    # Explorer discovery endpoints
+    app.router.add_get("/api/discover/cached", handle_discover_cached)
+    app.router.add_get("/api/discover/tasks", handle_discover_tasks)
+    app.router.add_get("/api/discover/hf-schema", handle_discover_hf_schema)
+
+    # Explorer session endpoints
+    app.router.add_post("/api/explore/load", handle_explore_load)
+    app.router.add_get("/api/explore/{session_id}/schema", handle_explore_schema)
+    app.router.add_get("/api/explore/{session_id}/records", handle_explore_records)
+    app.router.add_get("/api/explore/{session_id}/record/{idx}", handle_explore_record)
 
     # Serve the SPA via WWWResource (mirrors inspect_ai pattern)
     if STATIC_DIR.exists():
@@ -420,8 +515,227 @@ async def handle_sample(request: web.Request) -> web.Response:
     return web.json_response(result)
 
 
+# ---------------------------------------------------------------------------
+# Discovery handlers
+# ---------------------------------------------------------------------------
+
+
+async def handle_discover_cached(request: web.Request) -> web.Response:
+    """List all HuggingFace datasets in the local cache."""
+    from inspect_dataset._view.discovery import list_cached_hf_datasets
+
+    result = await asyncio.to_thread(list_cached_hf_datasets)
+    return web.json_response(result)
+
+
+async def handle_discover_tasks(request: web.Request) -> web.Response:
+    """List all installed inspect_ai @task callables."""
+    from inspect_dataset._view.discovery import list_installed_tasks
+
+    result = await asyncio.to_thread(list_installed_tasks)
+    return web.json_response(result)
+
+
+async def handle_discover_hf_schema(request: web.Request) -> web.Response:
+    """Fetch field schema for an HF dataset from the dataset-viewer API.
+
+    Query params: dataset (required), config (optional)
+    """
+    repo_id = request.rel_url.query.get("dataset", "").strip()
+    if not repo_id:
+        return web.json_response({"error": "dataset is required"}, status=400)
+    config = request.rel_url.query.get("config") or None
+
+    from inspect_dataset._view.discovery import fetch_hf_schema
+
+    schema = await asyncio.to_thread(fetch_hf_schema, repo_id, config)
+    if schema is None:
+        return web.json_response(
+            {"error": "Schema not available from HF API"},
+            status=404,
+        )
+    return web.json_response({"dataset": repo_id, "schema": schema})
+
+
+# ---------------------------------------------------------------------------
+# Explorer session handlers
+# ---------------------------------------------------------------------------
+
+
+async def handle_explore_load(request: web.Request) -> web.Response:
+    """Load a dataset into a new explorer session.
+
+    Request body::
+
+        {
+          "source": "cais/hle",          # HF slug or inspect task spec
+          "source_type": "hf",           # "hf" | "inspect_task"
+          "split": "test",               # optional, default "train"
+          "limit": 500                   # optional
+        }
+
+    Returns a session ID and basic metadata.
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "invalid JSON body"}, status=400)
+
+    source: str = body.get("source", "").strip()
+    source_type: str = body.get("source_type", "hf")
+    split: str = body.get("split", "train")
+    limit: int | None = body.get("limit")
+
+    if not source:
+        return web.json_response({"error": "source is required"}, status=400)
+
+    try:
+        if source_type == "inspect_task":
+            from inspect_dataset.loader import load_task_from_spec
+
+            records, fields = await asyncio.to_thread(load_task_from_spec, source, limit)
+        else:
+            from inspect_dataset._types import FieldMap
+            from inspect_dataset.loader import load_hf_dataset, resolve_fields
+
+            records = await asyncio.to_thread(load_hf_dataset, source, split, None, limit)
+            try:
+                fields = resolve_fields(records, None, None, None, None)
+            except Exception:
+                fields = FieldMap(question="", answer="", id=None, image=None)
+    except Exception as exc:
+        return web.json_response({"error": str(exc)}, status=422)
+
+    session_id = str(uuid.uuid4())
+
+    # Prefer HF API schema (accurate types, no sampling needed) for HF datasets
+    schema: list[dict[str, Any]] | None = None
+    if source_type == "hf":
+        from inspect_dataset._view.discovery import fetch_hf_schema
+
+        schema = await asyncio.to_thread(fetch_hf_schema, source)
+
+    if not schema:
+        schema = _compute_schema(records)
+
+    session: dict[str, Any] = {
+        "session_id": session_id,
+        "source": source,
+        "source_type": source_type,
+        "split": split,
+        "total": len(records),
+        "records": records,
+        "fields": fields,
+        "schema": schema,
+    }
+    request.app["explorer_sessions"][session_id] = session
+
+    return web.json_response(
+        {
+            "session_id": session_id,
+            "source": source,
+            "source_type": source_type,
+            "split": split,
+            "total": len(records),
+            "columns": [s["name"] for s in schema],
+        }
+    )
+
+
+def _get_session(request: web.Request) -> dict[str, Any]:
+    session_id = request.match_info["session_id"]
+    sessions: dict[str, Any] = request.app["explorer_sessions"]
+    if session_id not in sessions:
+        raise web.HTTPNotFound(reason=f"Session '{session_id}' not found.")
+    return cast(dict[str, Any], sessions[session_id])
+
+
+async def handle_explore_schema(request: web.Request) -> web.Response:
+    """Return field schema + statistics for an explorer session."""
+    session = _get_session(request)
+    return web.json_response(
+        {
+            "session_id": session["session_id"],
+            "source": session["source"],
+            "total": session["total"],
+            "schema": session["schema"],
+        }
+    )
+
+
+async def handle_explore_records(request: web.Request) -> web.Response:
+    """Return a paginated slice of records (JSON-safe, no raw bytes).
+
+    Query params: offset (default 0), limit (default 100, max 500)
+    """
+    session = _get_session(request)
+    try:
+        offset = int(request.rel_url.query.get("offset", 0))
+        limit = min(int(request.rel_url.query.get("limit", 100)), 500)
+    except ValueError:
+        return web.json_response({"error": "invalid offset/limit"}, status=400)
+
+    records: list[dict[str, Any]] = session["records"]
+    page = records[offset : offset + limit]
+    rows = [{"__index": offset + i, **_record_to_json_safe(r)} for i, r in enumerate(page)]
+    return web.json_response(
+        {
+            "session_id": session["session_id"],
+            "offset": offset,
+            "limit": limit,
+            "total": session["total"],
+            "rows": rows,
+        }
+    )
+
+
+async def handle_explore_record(
+    request: web.Request,
+) -> web.Response:
+    """Return one full record including images as data URLs."""
+    session = _get_session(request)
+    try:
+        idx = int(request.match_info["idx"])
+    except (ValueError, KeyError):
+        return web.json_response({"error": "invalid index"}, status=400)
+
+    records: list[dict[str, Any]] = session["records"]
+    if idx < 0 or idx >= len(records):
+        return web.json_response({"error": "index out of range"}, status=404)
+
+    record = records[idx]
+    safe = _record_to_json_safe(record)
+
+    images = []
+    for key, val in record.items():
+        if key.startswith("__"):
+            continue
+        if isinstance(val, dict) and isinstance(val.get("bytes"), bytes) and val["bytes"]:
+            images.append(
+                {
+                    "field": key,
+                    "data_url": _to_data_url(val["bytes"], val.get("path") or ""),
+                }
+            )
+
+    files_map: dict[str, Any] = record.get("__files__") or {}
+    files = []
+    for name, data in files_map.items():
+        if isinstance(data, bytes):
+            files.append({"name": name, "data_url": _to_data_url(data, name)})
+        elif isinstance(data, str):
+            files.append({"name": name, "data_url": data})
+
+    return web.json_response({"index": idx, "record": safe, "images": images, "files": files})
+
+
+# ---------------------------------------------------------------------------
+# Server runner
+# ---------------------------------------------------------------------------
+
+
 def run_server(
-    findings_dirs: list[str | Path] | str | Path,
+    findings_dirs: list[str | Path] | str | Path | None = None,
     port: int = 7576,
 ) -> None:
     """Start the view server (blocking)."""

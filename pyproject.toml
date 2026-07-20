@@ -1,6 +1,6 @@
 [project]
 name = "inspect-dataset"
-version = "0.3.4"
+version = "0.4.0"
 description = "Dataset quality scanner for AI evaluation datasets"
 readme = "README.md"
 license = "MIT"
@@ -15,6 +15,7 @@ dependencies = [
     "python-dotenv>=1.0",
     "rich>=13.0",
     "datasets>=2.0",
+    "openai>=2.30.0",
 ]
 
 [project.scripts]
@@ -83,6 +84,9 @@ convention = "google"
 python_version = "3.12"
 strict = true
 ignore_missing_imports = true # third-party libs are often untyped
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
 
 [dependency-groups]
 dev = [

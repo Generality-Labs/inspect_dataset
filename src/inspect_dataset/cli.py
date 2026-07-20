@@ -427,7 +427,7 @@ def _resolve_findings_dirs(paths: tuple[str, ...]) -> list[str]:
 
 
 @cli.command(name="view")
-@click.argument("findings_dirs", nargs=-1, required=True, type=click.Path(exists=True))
+@click.argument("findings_dirs", nargs=-1, required=False, type=click.Path(exists=True))
 @click.option(
     "--port",
     default=7576,
@@ -443,11 +443,15 @@ def _resolve_findings_dirs(paths: tuple[str, ...]) -> list[str]:
 def view(findings_dirs: tuple[str, ...], port: int, no_open: bool) -> None:
     r"""Launch the interactive dataset explorer.
 
-    FINDINGS_DIRS is one or more directories produced by
-    `inspect-dataset scan -o <dir>`, or a parent directory that contains
-    several such directories.
+    When called without arguments, opens the explorer home screen where you can
+    browse cached HuggingFace datasets and installed inspect tasks.
+
+    Optionally pass one or more findings directories to pre-load scan results:
 
     \b
+      # Open explorer (no pre-loaded findings)
+      inspect-dataset view
+
       # Single findings dir
       inspect-dataset view findings/vqa-rad/
 
@@ -463,13 +467,15 @@ def view(findings_dirs: tuple[str, ...], port: int, no_open: bool) -> None:
 
     console = Console()
 
-    dirs = _resolve_findings_dirs(findings_dirs)
-    if not dirs:
-        raise click.ClickException(
-            "No findings directories found. "
-            "Each directory must contain a scan_summary.json file. "
-            "Run `inspect-dataset scan ... -o <dir>` first."
-        )
+    dirs: list[str] = []
+    if findings_dirs:
+        dirs = _resolve_findings_dirs(findings_dirs)
+        if not dirs:
+            raise click.ClickException(
+                "No findings directories found. "
+                "Each directory must contain a scan_summary.json file. "
+                "Run `inspect-dataset scan ... -o <dir>` first."
+            )
 
     dir_paths: list[str | Path] = list(dirs)
     try:
@@ -478,13 +484,17 @@ def view(findings_dirs: tuple[str, ...], port: int, no_open: bool) -> None:
         raise click.ClickException(str(e)) from e
 
     url = f"http://localhost:{port}"
-    label = dirs[0] if len(dirs) == 1 else f"{len(dirs)} datasets"
-    console.print(f"Starting viewer at [bold]{url}[/bold] ({label})")
+    if dirs:
+        label = dirs[0] if len(dirs) == 1 else f"{len(dirs)} datasets"
+        console.print(f"Starting viewer at [bold]{url}[/bold] ({label})")
+    else:
+        console.print(f"Starting dataset explorer at [bold]{url}[/bold]")
 
     if not no_open:
         webbrowser.open(url)
 
-    run_server(dir_paths, port=port)
+    dirs_arg: list[str | Path] | None = list(dirs) if dirs else None
+    run_server(dirs_arg, port=port)
 
 
 @cli.command()

@@ -12010,6 +12010,68 @@ async function fetchSampleDetail(slug, idx) {
 		return null;
 	}
 }
+async function fetchHfSchema(repoId, config) {
+	const params = new URLSearchParams({ dataset: repoId });
+	if (config) params.set("config", config);
+	try {
+		const res = await fetch(`${BASE}/discover/hf-schema?${params}`);
+		if (!res.ok) return null;
+		return {
+			session_id: "",
+			source: repoId,
+			total: 0,
+			schema: (await res.json()).schema ?? []
+		};
+	} catch {
+		return null;
+	}
+}
+async function fetchCachedDatasets() {
+	const res = await fetch(`${BASE}/discover/cached`);
+	if (!res.ok) return [];
+	return res.json();
+}
+async function fetchInstalledTasks() {
+	const res = await fetch(`${BASE}/discover/tasks`);
+	if (!res.ok) return [];
+	return res.json();
+}
+async function loadExplorerSession(source, sourceType, split, limit) {
+	const res = await fetch(`${BASE}/explore/load`, {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({
+			source,
+			source_type: sourceType,
+			split,
+			limit: limit ?? null
+		})
+	});
+	if (!res.ok) {
+		const body = await res.json().catch(() => ({}));
+		throw new Error(body.error ?? `Failed to load dataset: ${res.status}`);
+	}
+	return res.json();
+}
+async function fetchExplorerSchema(sessionId) {
+	const res = await fetch(`${BASE}/explore/${sessionId}/schema`);
+	if (!res.ok) throw new Error(`Schema fetch failed: ${res.status}`);
+	return res.json();
+}
+async function fetchExplorerRecords(sessionId, offset, limit) {
+	const res = await fetch(`${BASE}/explore/${sessionId}/records?offset=${offset}&limit=${limit}`);
+	if (!res.ok) throw new Error(`Records fetch failed: ${res.status}`);
+	return res.json();
+}
+async function fetchExplorerRecord(sessionId, idx) {
+	try {
+		const res = await fetch(`${BASE}/explore/${sessionId}/record/${idx}`);
+		if (!res.ok) return null;
+		return res.json();
+	} catch {
+		return null;
+	}
+}
 //#endregion
 //#region src/store.ts
 var useStore = create$1((set, get) => ({
@@ -12021,7 +12083,39 @@ var useStore = create$1((set, get) => ({
 	loading: false,
 	error: null,
 	selectedFinding: null,
+	explorerSession: null,
+	explorerSchema: null,
+	explorerLoading: false,
+	explorerError: null,
 	setSelectedFinding: (finding) => set({ selectedFinding: finding }),
+	startExplorerSession: async (source, sourceType, split, limit) => {
+		set({
+			explorerLoading: true,
+			explorerError: null,
+			explorerSession: null,
+			explorerSchema: null
+		});
+		try {
+			const session = await loadExplorerSession(source, sourceType, split, limit);
+			set({
+				explorerSession: session,
+				explorerSchema: await fetchExplorerSchema(session.session_id),
+				explorerLoading: false
+			});
+			return session;
+		} catch (e) {
+			set({
+				explorerError: String(e),
+				explorerLoading: false
+			});
+			return null;
+		}
+	},
+	clearExplorerSession: () => set({
+		explorerSession: null,
+		explorerSchema: null,
+		explorerError: null
+	}),
 	loadDatasets: async () => {
 		try {
 			set({ datasets: await fetchDatasets() });
@@ -84274,6 +84368,998 @@ function DatasetPicker({ datasets }) {
 	});
 }
 //#endregion
+//#region src/components/ExplorerHome.tsx
+function formatBytes(bytes) {
+	if (bytes < 1024) return `${bytes} B`;
+	if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+	if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+	return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`;
+}
+function ManualEntryForm({ onLoad }) {
+	const [source, setSource] = (0, import_react.useState)("");
+	const [sourceType, setSourceType] = (0, import_react.useState)("hf");
+	const [split, setSplit] = (0, import_react.useState)("train");
+	const [limit, setLimit] = (0, import_react.useState)("");
+	const handleSubmit = (e) => {
+		e.preventDefault();
+		if (!source.trim()) return;
+		onLoad(source.trim(), sourceType, split || "train", limit ? parseInt(limit, 10) : void 0);
+	};
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("form", {
+		onSubmit: handleSubmit,
+		children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+			className: "row g-2",
+			children: [
+				/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+					className: "col-12",
+					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("label", {
+						className: "form-label fw-semibold small",
+						children: "Dataset / Task"
+					}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+						type: "text",
+						className: "form-control",
+						placeholder: sourceType === "hf" ? "e.g. cais/hle or flaviagiammarino/vqa-rad" : "e.g. inspect_evals/gpqa_diamond",
+						value: source,
+						onChange: (e) => setSource(e.target.value),
+						autoFocus: true
+					})]
+				}),
+				/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+					className: "col-sm-4",
+					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("label", {
+						className: "form-label fw-semibold small",
+						children: "Source type"
+					}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("select", {
+						className: "form-select form-select-sm",
+						value: sourceType,
+						onChange: (e) => setSourceType(e.target.value),
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("option", {
+							value: "hf",
+							children: "HuggingFace dataset"
+						}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("option", {
+							value: "inspect_task",
+							children: "inspect_ai task"
+						})]
+					})]
+				}),
+				sourceType === "hf" && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+					className: "col-sm-4",
+					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("label", {
+						className: "form-label fw-semibold small",
+						children: "Split"
+					}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+						type: "text",
+						className: "form-control form-control-sm",
+						placeholder: "train",
+						value: split,
+						onChange: (e) => setSplit(e.target.value)
+					})]
+				}),
+				/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+					className: "col-sm-4",
+					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("label", {
+						className: "form-label fw-semibold small",
+						children: [
+							"Limit",
+							" ",
+							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+								className: "text-body-secondary fw-normal",
+								children: "(optional)"
+							})
+						]
+					}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+						type: "number",
+						className: "form-control form-control-sm",
+						placeholder: "all",
+						min: 1,
+						value: limit,
+						onChange: (e) => setLimit(e.target.value)
+					})]
+				}),
+				/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+					className: "col-12",
+					children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+						type: "submit",
+						className: "btn btn-primary",
+						disabled: !source.trim(),
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("i", { className: "bi bi-box-arrow-in-right me-1" }), "Load dataset"]
+					})
+				})
+			]
+		})
+	});
+}
+var TYPE_BADGE$1 = {
+	str: "bg-primary",
+	int: "bg-success",
+	float: "bg-success",
+	bool: "bg-warning text-dark",
+	image: "bg-info text-dark",
+	list: "bg-secondary",
+	dict: "bg-secondary",
+	null: "bg-light text-dark border"
+};
+function SchemaPreview({ repoId, onClose, onOpen, split }) {
+	const [loaded, setLoaded] = (0, import_react.useState)(null);
+	(0, import_react.useEffect)(() => {
+		let cancelled = false;
+		fetchHfSchema(repoId).then((info) => {
+			if (!cancelled) setLoaded({
+				repoId,
+				schema: info?.schema ?? null
+			});
+		});
+		return () => {
+			cancelled = true;
+		};
+	}, [repoId]);
+	const schema = loaded && loaded.repoId === repoId ? loaded.schema : null;
+	const loading = loaded === null || loaded.repoId !== repoId;
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+		className: "card border shadow",
+		style: {
+			minWidth: 260,
+			maxWidth: 320
+		},
+		children: [
+			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+				className: "card-header d-flex justify-content-between align-items-center py-2",
+				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+					className: "small fw-semibold text-truncate me-2",
+					title: repoId,
+					children: repoId
+				}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+					className: "btn-close btn-sm",
+					onClick: onClose
+				})]
+			}),
+			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+				className: "card-body py-2 px-3",
+				style: {
+					maxHeight: 280,
+					overflowY: "auto"
+				},
+				children: [
+					loading && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+						className: "text-center py-2 text-body-secondary small",
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "spinner-border spinner-border-sm me-1" }), "Loading schema…"]
+					}),
+					!loading && schema === null && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+						className: "text-body-secondary small py-1",
+						children: "Schema not available from HF API."
+					}),
+					!loading && schema && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("dl", {
+						className: "mb-0",
+						children: schema.map((f) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+							className: "d-flex justify-content-between align-items-center mb-1",
+							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("dt", {
+								className: "small mb-0 fw-normal text-truncate me-2",
+								children: f.name
+							}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("dd", {
+								className: "mb-0 flex-shrink-0",
+								children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+									className: `badge small ${TYPE_BADGE$1[f.type] ?? "bg-secondary"}`,
+									children: f.hf_type ?? f.type
+								})
+							})]
+						}, f.name))
+					})
+				]
+			}),
+			/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+				className: "card-footer py-2",
+				children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+					className: "btn btn-primary btn-sm w-100",
+					onClick: onOpen,
+					children: [
+						"Open [",
+						split,
+						"]"
+					]
+				})
+			})
+		]
+	});
+}
+function CachedDatasetsList({ datasets, loading, onSelect }) {
+	const [search, setSearch] = (0, import_react.useState)("");
+	const [selectedSplits, setSelectedSplits] = (0, import_react.useState)({});
+	const [previewRepo, setPreviewRepo] = (0, import_react.useState)(null);
+	if (loading) return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+		className: "text-center py-4 text-body-secondary small",
+		children: "Scanning cache…"
+	});
+	if (datasets.length === 0) return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+		className: "text-center py-4 text-body-secondary small",
+		children: "No cached HuggingFace datasets found."
+	});
+	const filtered = datasets.filter((ds) => ds.repo_id.toLowerCase().includes(search.toLowerCase()));
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+		type: "search",
+		className: "form-control form-control-sm mb-2",
+		placeholder: `Filter ${datasets.length} cached datasets…`,
+		value: search,
+		onChange: (e) => setSearch(e.target.value)
+	}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+		className: "d-flex gap-3",
+		style: { alignItems: "flex-start" },
+		children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+			style: {
+				maxHeight: 320,
+				overflowY: "auto",
+				flex: 1
+			},
+			className: "border rounded",
+			children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("table", {
+				className: "table table-sm table-hover mb-0 small align-middle",
+				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("thead", {
+					className: "table-light sticky-top",
+					children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("tr", { children: [
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("th", { children: "Dataset" }),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("th", {
+							style: { width: 110 },
+							children: "Size"
+						}),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("th", {
+							style: { width: 120 },
+							children: "Split"
+						}),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("th", { style: { width: 80 } })
+					] })
+				}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("tbody", { children: filtered.map((ds) => {
+					const split = selectedSplits[ds.repo_id] ?? ds.splits[0] ?? "train";
+					const isSelected = previewRepo === ds.repo_id;
+					return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("tr", {
+						className: isSelected ? "table-active" : "",
+						children: [
+							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+								className: "btn btn-link btn-sm p-0 text-start fw-semibold",
+								onClick: () => setPreviewRepo(isSelected ? null : ds.repo_id),
+								title: "Preview schema",
+								children: ds.repo_id
+							}) }),
+							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("td", {
+								className: "text-body-secondary",
+								children: formatBytes(ds.size_on_disk)
+							}),
+							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("td", { children: ds.splits.length > 1 ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("select", {
+								className: "form-select form-select-sm py-0",
+								style: { fontSize: "0.8rem" },
+								value: split,
+								onChange: (e) => setSelectedSplits((prev) => ({
+									...prev,
+									[ds.repo_id]: e.target.value
+								})),
+								children: ds.splits.map((s) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("option", {
+									value: s,
+									children: s
+								}, s))
+							}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+								className: "text-body-secondary",
+								children: split
+							}) }),
+							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+								className: "btn btn-sm btn-outline-primary py-0",
+								onClick: () => onSelect(ds, split),
+								children: "Open"
+							}) })
+						]
+					}, ds.repo_id);
+				}) })]
+			}), filtered.length === 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+				className: "text-center py-3 text-body-secondary small",
+				children: [
+					"No results for \"",
+					search,
+					"\""
+				]
+			})]
+		}), previewRepo && (() => {
+			const ds = filtered.find((d) => d.repo_id === previewRepo);
+			const split = ds ? selectedSplits[previewRepo] ?? ds.splits[0] ?? "train" : "train";
+			return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(SchemaPreview, {
+				repoId: previewRepo,
+				split,
+				onClose: () => setPreviewRepo(null),
+				onOpen: () => {
+					if (ds) onSelect(ds, split);
+				}
+			}, previewRepo);
+		})()]
+	})] });
+}
+function InstalledTasksList({ tasks, loading, onSelect }) {
+	const [search, setSearch] = (0, import_react.useState)("");
+	if (loading) return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+		className: "text-center py-4 text-body-secondary small",
+		children: "Discovering tasks…"
+	});
+	if (tasks.length === 0) return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+		className: "text-center py-4 text-body-secondary small",
+		children: "No inspect_ai tasks found. Install inspect_evals or another package."
+	});
+	const packages = {};
+	for (const t of tasks) {
+		const pkg = t.package || "other";
+		(packages[pkg] = packages[pkg] ?? []).push(t);
+	}
+	const filtered = tasks.filter((t) => t.name.toLowerCase().includes(search.toLowerCase()));
+	const filteredPkgs = {};
+	for (const t of filtered) {
+		const pkg = t.package || "other";
+		(filteredPkgs[pkg] = filteredPkgs[pkg] ?? []).push(t);
+	}
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+		type: "search",
+		className: "form-control form-control-sm mb-2",
+		placeholder: `Filter ${tasks.length} tasks…`,
+		value: search,
+		onChange: (e) => setSearch(e.target.value)
+	}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+		style: {
+			maxHeight: 320,
+			overflowY: "auto"
+		},
+		className: "border rounded",
+		children: [Object.entries(filteredPkgs).map(([pkg, pkgTasks]) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+			className: "px-3 py-1 bg-body-tertiary border-bottom small fw-semibold text-body-secondary",
+			children: pkg
+		}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("table", {
+			className: "table table-sm table-hover mb-0 small",
+			children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("tbody", { children: pkgTasks.map((t) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("tr", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("td", {
+				className: "ps-3",
+				children: t.name
+			}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("td", {
+				style: { width: 80 },
+				className: "pe-2",
+				children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+					className: "btn btn-sm btn-outline-primary py-0",
+					onClick: () => onSelect(t),
+					children: "Open"
+				})
+			})] }, t.name)) })
+		})] }, pkg)), filtered.length === 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+			className: "text-center py-3 text-body-secondary small",
+			children: [
+				"No results for \"",
+				search,
+				"\""
+			]
+		})]
+	})] });
+}
+function ExplorerHome() {
+	const [activeTab, setActiveTab] = (0, import_react.useState)("cached");
+	const [cachedDatasets, setCachedDatasets] = (0, import_react.useState)([]);
+	const [installedTasks, setInstalledTasks] = (0, import_react.useState)([]);
+	const [cachedLoading, setCachedLoading] = (0, import_react.useState)(true);
+	const [tasksLoading, setTasksLoading] = (0, import_react.useState)(true);
+	const startExplorerSession = useStore((s) => s.startExplorerSession);
+	const explorerLoading = useStore((s) => s.explorerLoading);
+	const explorerError = useStore((s) => s.explorerError);
+	const navigate = useNavigate();
+	(0, import_react.useEffect)(() => {
+		fetchCachedDatasets().then((ds) => {
+			setCachedDatasets(ds);
+			setCachedLoading(false);
+		});
+		fetchInstalledTasks().then((ts) => {
+			setInstalledTasks(ts);
+			setTasksLoading(false);
+		});
+	}, []);
+	const handleLoad = async (source, sourceType, split, limit) => {
+		const session = await startExplorerSession(source, sourceType, split, limit);
+		if (session) navigate(`/explore/${session.session_id}`);
+	};
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+		className: "d-flex flex-column align-items-center justify-content-start",
+		style: {
+			minHeight: "100vh",
+			background: "var(--bs-body-bg)"
+		},
+		children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("nav", {
+			className: "navbar w-100 bg-body-tertiary border-bottom px-3",
+			children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+				className: "navbar-brand fw-bold",
+				children: "inspect-dataset"
+			}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+				className: "navbar-text small text-body-secondary",
+				children: "Dataset Explorer"
+			})]
+		}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+			className: "w-100 px-3 py-4",
+			style: { maxWidth: 860 },
+			children: [
+				/* @__PURE__ */ (0, import_jsx_runtime.jsx)("h1", {
+					className: "h4 mb-1",
+					children: "Open a dataset"
+				}),
+				/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+					className: "text-body-secondary mb-4",
+					children: "Choose from your local cache, installed inspect tasks, or enter a HuggingFace slug directly."
+				}),
+				explorerError && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+					className: "alert alert-danger mb-3",
+					children: [
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("strong", { children: "Error loading dataset:" }),
+						" ",
+						explorerError.replace(/^Error:\s*/, "")
+					]
+				}),
+				explorerLoading && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+					className: "alert alert-info d-flex align-items-center gap-2 mb-3",
+					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+						className: "spinner-border spinner-border-sm",
+						role: "status"
+					}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "Loading dataset…" })]
+				}),
+				/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("ul", {
+					className: "nav nav-tabs mb-3",
+					children: [
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("li", {
+							className: "nav-item",
+							children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+								className: `nav-link${activeTab === "cached" ? " active" : ""}`,
+								onClick: () => setActiveTab("cached"),
+								children: [
+									/* @__PURE__ */ (0, import_jsx_runtime.jsx)("i", { className: "bi bi-hdd me-1" }),
+									"Cached HF",
+									!cachedLoading && cachedDatasets.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+										className: "badge bg-secondary ms-1 small",
+										children: cachedDatasets.length
+									})
+								]
+							})
+						}),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("li", {
+							className: "nav-item",
+							children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+								className: `nav-link${activeTab === "tasks" ? " active" : ""}`,
+								onClick: () => setActiveTab("tasks"),
+								children: [
+									/* @__PURE__ */ (0, import_jsx_runtime.jsx)("i", { className: "bi bi-puzzle me-1" }),
+									"Inspect tasks",
+									!tasksLoading && installedTasks.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+										className: "badge bg-secondary ms-1 small",
+										children: installedTasks.length
+									})
+								]
+							})
+						}),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("li", {
+							className: "nav-item",
+							children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+								className: `nav-link${activeTab === "manual" ? " active" : ""}`,
+								onClick: () => setActiveTab("manual"),
+								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("i", { className: "bi bi-search me-1" }), "Direct entry"]
+							})
+						})
+					]
+				}),
+				/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+					className: "card border-0 shadow-sm",
+					children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+						className: "card-body",
+						children: [
+							activeTab === "cached" && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(CachedDatasetsList, {
+								datasets: cachedDatasets,
+								loading: cachedLoading,
+								onSelect: (ds, split) => handleLoad(ds.repo_id, "hf", split)
+							}),
+							activeTab === "tasks" && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(InstalledTasksList, {
+								tasks: installedTasks,
+								loading: tasksLoading,
+								onSelect: (t) => handleLoad(t.name, "inspect_task", "train")
+							}),
+							activeTab === "manual" && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ManualEntryForm, { onLoad: handleLoad })
+						]
+					})
+				})
+			]
+		})]
+	});
+}
+//#endregion
+//#region src/components/ExplorerView.tsx
+ModuleRegistry.registerModules([AllCommunityModule]);
+function CellRenderer({ value }) {
+	if (value === null || value === void 0) return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+		className: "fst-italic",
+		style: { opacity: .55 },
+		children: "null"
+	});
+	if (value === "") return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+		className: "fst-italic",
+		style: { opacity: .55 },
+		children: "empty"
+	});
+	if (typeof value === "object" && !Array.isArray(value)) {
+		const obj = value;
+		if (obj.__type === "image") return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+			className: "badge bg-info text-dark",
+			children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("i", { className: "bi bi-image me-1" }), "image"]
+		});
+		if (obj.__type === "bytes") return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+			className: "small",
+			style: { opacity: .7 },
+			children: [String(obj.size), " bytes"]
+		});
+		return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+			className: "font-monospace small",
+			title: JSON.stringify(value),
+			style: {
+				opacity: .7,
+				overflow: "hidden",
+				textOverflow: "ellipsis",
+				whiteSpace: "nowrap",
+				display: "block",
+				maxWidth: 200
+			},
+			children: "{…}"
+		});
+	}
+	if (Array.isArray(value)) return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+		className: "small",
+		style: { opacity: .7 },
+		children: [
+			"[",
+			value.length,
+			" items]"
+		]
+	});
+	const str = String(value);
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+		title: str,
+		style: {
+			display: "block",
+			overflow: "hidden",
+			textOverflow: "ellipsis",
+			whiteSpace: "nowrap"
+		},
+		children: str
+	});
+}
+var TYPE_BADGE = {
+	str: "bg-primary",
+	int: "bg-success",
+	float: "bg-success",
+	bool: "bg-warning text-dark",
+	image: "bg-info text-dark",
+	list: "bg-secondary",
+	dict: "bg-secondary",
+	null: "bg-light text-dark border"
+};
+function SchemaPanel({ schema, onClose }) {
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+		className: "border-start d-flex flex-column bg-body",
+		style: {
+			width: 300,
+			minWidth: 300,
+			overflowY: "auto"
+		},
+		children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+			className: "p-3 border-bottom d-flex justify-content-between align-items-center",
+			children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("h6", {
+				className: "mb-0 fw-semibold",
+				children: "Schema"
+			}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+				className: "btn btn-sm btn-close",
+				onClick: onClose,
+				"aria-label": "Close schema panel"
+			})]
+		}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+			className: "px-3 py-2",
+			children: schema.map((f) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+				className: "mb-3",
+				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+					className: "d-flex justify-content-between align-items-center mb-1",
+					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+						className: "fw-semibold small text-truncate me-2",
+						children: f.name
+					}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+						className: `badge small flex-shrink-0 ${TYPE_BADGE[f.type] ?? "bg-secondary"}`,
+						children: f.type
+					})]
+				}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+					className: "small text-body-secondary",
+					children: [
+						f.null_count > 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+							className: "me-2",
+							children: [
+								f.null_count,
+								" null (",
+								Math.round(f.null_count / f.total * 100),
+								"%)"
+							]
+						}),
+						f.unique_count !== void 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+							className: "me-2",
+							children: [f.unique_count, " unique"]
+						}),
+						f.avg_length !== void 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { children: [
+							"avg ",
+							f.avg_length,
+							" chars"
+						] }),
+						f.mean !== void 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { children: [
+							f.min,
+							"–",
+							f.max,
+							" (mean ",
+							f.mean,
+							")"
+						] })
+					]
+				})]
+			}, f.name))
+		})]
+	});
+}
+function RecordDetailPanel({ sessionId, idx, onClose, onPrev, onNext, hasPrev, hasNext }) {
+	const [loaded, setLoaded] = (0, import_react.useState)(null);
+	(0, import_react.useEffect)(() => {
+		let cancelled = false;
+		const key = `${sessionId}:${idx}`;
+		fetchExplorerRecord(sessionId, idx).then((d) => {
+			if (!cancelled) setLoaded({
+				key,
+				detail: d
+			});
+		});
+		return () => {
+			cancelled = true;
+		};
+	}, [sessionId, idx]);
+	const currentKey = `${sessionId}:${idx}`;
+	const detail = loaded && loaded.key === currentKey ? loaded.detail : null;
+	const loading = loaded === null || loaded.key !== currentKey;
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+		className: "border-start d-flex flex-column bg-body",
+		style: {
+			width: 360,
+			minWidth: 360,
+			overflowY: "auto"
+		},
+		children: [
+			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+				className: "p-3 border-bottom d-flex justify-content-between align-items-center",
+				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("h6", {
+					className: "mb-0 fw-semibold",
+					children: ["Record #", idx]
+				}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+					className: "btn-close",
+					onClick: onClose,
+					"aria-label": "Close"
+				})]
+			}),
+			loading && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+				className: "p-3 text-body-secondary small",
+				children: "Loading…"
+			}),
+			detail && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+				className: "flex-grow-1",
+				style: { overflowY: "auto" },
+				children: [detail.images.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+					className: "p-3 border-bottom",
+					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+						className: "text-uppercase small text-body-secondary fw-semibold mb-2",
+						children: "Images"
+					}), detail.images.map((img) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+						className: "mb-2",
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+							className: "small text-body-secondary mb-1",
+							children: img.field
+						}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("img", {
+							src: img.data_url,
+							alt: img.field,
+							className: "img-fluid rounded",
+							style: { maxHeight: 240 }
+						})]
+					}, img.field))]
+				}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+					className: "p-3",
+					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+						className: "text-uppercase small text-body-secondary fw-semibold mb-2",
+						children: "Fields"
+					}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("dl", {
+						className: "mb-0",
+						children: Object.entries(detail.record).map(([key, val]) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+							className: "mb-2",
+							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("dt", {
+								className: "small fw-semibold text-body-secondary",
+								children: key
+							}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("dd", {
+								className: "mb-0 small",
+								children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(FieldValue, { value: val })
+							})]
+						}, key))
+					})]
+				})]
+			}),
+			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+				className: "p-3 border-top d-flex justify-content-between",
+				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+					className: "btn btn-sm btn-outline-secondary",
+					onClick: onPrev,
+					disabled: !hasPrev,
+					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("i", { className: "bi bi-chevron-left me-1" }), "Prev"]
+				}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+					className: "btn btn-sm btn-outline-secondary",
+					onClick: onNext,
+					disabled: !hasNext,
+					children: ["Next", /* @__PURE__ */ (0, import_jsx_runtime.jsx)("i", { className: "bi bi-chevron-right ms-1" })]
+				})]
+			})
+		]
+	});
+}
+function FieldValue({ value }) {
+	if (value === null || value === void 0) return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+		className: "text-body-secondary fst-italic",
+		children: "null"
+	});
+	if (value === "") return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+		className: "text-body-secondary fst-italic",
+		children: "empty"
+	});
+	if (typeof value === "object" && !Array.isArray(value)) {
+		if (value.__type === "image") return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+			className: "badge bg-info text-dark",
+			children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("i", { className: "bi bi-image me-1" }), "image (see above)"]
+		});
+		return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("pre", {
+			className: "small bg-body-secondary rounded p-2 mb-0",
+			style: {
+				maxHeight: 200,
+				overflowY: "auto",
+				whiteSpace: "pre-wrap"
+			},
+			children: JSON.stringify(value, null, 2)
+		});
+	}
+	if (Array.isArray(value)) return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("pre", {
+		className: "small bg-body-secondary rounded p-2 mb-0",
+		style: {
+			maxHeight: 200,
+			overflowY: "auto",
+			whiteSpace: "pre-wrap"
+		},
+		children: JSON.stringify(value, null, 2)
+	});
+	const str = String(value);
+	if (str.length > 300) return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("details", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("summary", {
+		className: "small text-body-secondary",
+		children: [str.slice(0, 80), "…"]
+	}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+		className: "mb-0 small mt-1",
+		style: { whiteSpace: "pre-wrap" },
+		children: str
+	})] });
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+		style: { whiteSpace: "pre-wrap" },
+		children: str
+	});
+}
+var PAGE_SIZE = 200;
+function ExplorerView() {
+	const { sessionId } = useParams();
+	const navigate = useNavigate();
+	const explorerSession = useStore((s) => s.explorerSession);
+	const explorerSchema = useStore((s) => s.explorerSchema);
+	const clearSession = useStore((s) => s.clearExplorerSession);
+	const [rows, setRows] = (0, import_react.useState)([]);
+	const [total, setTotal] = (0, import_react.useState)(0);
+	const [loadingRows, setLoadingRows] = (0, import_react.useState)(false);
+	const [rowError, setRowError] = (0, import_react.useState)(null);
+	const [showSchema, setShowSchema] = (0, import_react.useState)(false);
+	const [selectedIdx, setSelectedIdx] = (0, import_react.useState)(null);
+	const [offset, setOffset] = (0, import_react.useState)(0);
+	const [localSchema, setLocalSchema] = (0, import_react.useState)(null);
+	const gridApi = (0, import_react.useRef)(null);
+	const sid = sessionId ?? explorerSession?.session_id ?? null;
+	(0, import_react.useEffect)(() => {
+		if (!sid) {
+			navigate("/", { replace: true });
+			return;
+		}
+		if (!explorerSchema && !explorerSession) fetchExplorerSchema(sid).then(setLocalSchema).catch(() => setLocalSchema(null));
+	}, [
+		sid,
+		explorerSchema,
+		explorerSession,
+		navigate
+	]);
+	(0, import_react.useEffect)(() => {
+		if (!sid) return;
+		setLoadingRows(true);
+		setRowError(null);
+		fetchExplorerRecords(sid, 0, PAGE_SIZE).then((page) => {
+			setRows(page.rows);
+			setTotal(page.total);
+			setOffset(PAGE_SIZE);
+			setLoadingRows(false);
+		}).catch((e) => {
+			setRowError(String(e));
+			setLoadingRows(false);
+		});
+	}, [sid]);
+	const loadMore = (0, import_react.useCallback)(() => {
+		if (!sid || loadingRows || offset >= total) return;
+		setLoadingRows(true);
+		fetchExplorerRecords(sid, offset, PAGE_SIZE).then((page) => {
+			setRows((prev) => [...prev, ...page.rows]);
+			setOffset((prev) => prev + PAGE_SIZE);
+			setLoadingRows(false);
+		}).catch(() => setLoadingRows(false));
+	}, [
+		sid,
+		loadingRows,
+		offset,
+		total
+	]);
+	const schema = (explorerSchema ?? localSchema)?.schema ?? [];
+	const session = explorerSession;
+	const colDefs = [{
+		headerName: "#",
+		field: "__index",
+		width: 65,
+		pinned: "left",
+		sort: "asc",
+		sortable: true
+	}, ...(schema.length > 0 ? schema.filter((f) => !f.name.startsWith("__")).map((f) => f.name) : (session?.columns ?? []).filter((c) => !c.startsWith("__"))).map((name) => {
+		return {
+			headerName: name,
+			field: name,
+			flex: schema.find((f) => f.name === name)?.type === "str" ? 2 : 1,
+			minWidth: 80,
+			sortable: true,
+			filter: true,
+			valueFormatter: () => "",
+			cellRenderer: (params) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(CellRenderer, { value: params.value })
+		};
+	})];
+	const handleClose = () => {
+		clearSession();
+		navigate("/");
+	};
+	if (!sid) return null;
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+		className: "d-flex flex-column vh-100",
+		children: [
+			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("nav", {
+				className: "navbar bg-body-tertiary border-bottom px-3 flex-shrink-0",
+				children: [
+					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+						className: "btn btn-sm btn-outline-secondary me-2",
+						onClick: handleClose,
+						title: "Back to home",
+						children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("i", { className: "bi bi-arrow-left" })
+					}),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+						className: "navbar-brand fw-bold me-2",
+						children: "inspect-dataset"
+					}),
+					session && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+						className: "navbar-text me-auto",
+						children: [
+							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+								className: "fw-semibold",
+								children: session.source
+							}),
+							session.source_type === "hf" && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("a", {
+								href: `https://huggingface.co/datasets/${session.source}`,
+								target: "_blank",
+								rel: "noopener noreferrer",
+								className: "ms-2",
+								title: "View on HuggingFace",
+								children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("i", { className: "bi bi-box-arrow-up-right" })
+							}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+								className: "text-body-secondary ms-1",
+								children: [
+									"[",
+									session.split,
+									"]"
+								]
+							})] }),
+							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+								className: "text-body-secondary ms-2",
+								children: [total.toLocaleString(), " records"]
+							})
+						]
+					}),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+						className: "d-flex gap-2",
+						children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+							className: `btn btn-sm ${showSchema ? "btn-secondary" : "btn-outline-secondary"}`,
+							onClick: () => setShowSchema((v) => !v),
+							title: "Toggle schema panel",
+							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("i", { className: "bi bi-table me-1" }), "Schema"]
+						})
+					})
+				]
+			}),
+			rowError && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+				className: "alert alert-danger m-2 mb-0",
+				children: rowError
+			}),
+			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+				className: "d-flex flex-grow-1",
+				style: { minHeight: 0 },
+				children: [
+					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+						className: "flex-grow-1 d-flex flex-column",
+						style: { minHeight: 0 },
+						children: loadingRows && rows.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+							className: "d-flex align-items-center justify-content-center flex-grow-1 text-body-secondary",
+							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "spinner-border me-2" }), "Loading records…"]
+						}) : /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+							style: {
+								flex: 1,
+								minHeight: 0
+							},
+							children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(AgGridReact, {
+								theme: themeQuartz,
+								rowData: rows,
+								columnDefs: colDefs,
+								onGridReady: (p) => {
+									gridApi.current = p.api;
+								},
+								onRowClicked: (e) => {
+									const idx = e.data?.__index;
+									if (idx !== void 0) setSelectedIdx(idx);
+								},
+								rowSelection: {
+									mode: "singleRow",
+									enableClickSelection: true
+								},
+								getRowStyle: (p) => p.data?.__index === selectedIdx ? { background: "var(--bs-primary-bg-subtle)" } : void 0
+							})
+						}), offset < total && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+							className: "border-top px-3 py-2 d-flex align-items-center gap-3 bg-body-tertiary small",
+							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+								className: "text-body-secondary",
+								children: [
+									"Showing ",
+									rows.length.toLocaleString(),
+									" of",
+									" ",
+									total.toLocaleString(),
+									" records"
+								]
+							}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+								className: "btn btn-sm btn-outline-secondary",
+								onClick: loadMore,
+								disabled: loadingRows,
+								children: [
+									loadingRows ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "spinner-border spinner-border-sm me-1" }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)("i", { className: "bi bi-plus-circle me-1" }),
+									"Load ",
+									Math.min(PAGE_SIZE, total - offset).toLocaleString(),
+									" ",
+									"more"
+								]
+							})]
+						})] })
+					}),
+					showSchema && schema.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(SchemaPanel, {
+						schema,
+						onClose: () => setShowSchema(false)
+					}),
+					selectedIdx !== null && sid && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(RecordDetailPanel, {
+						sessionId: sid,
+						idx: selectedIdx,
+						onClose: () => setSelectedIdx(null),
+						onPrev: () => setSelectedIdx((i) => i !== null && i > 0 ? i - 1 : i),
+						onNext: () => setSelectedIdx((i) => i !== null && i < total - 1 ? i + 1 : i),
+						hasPrev: selectedIdx > 0,
+						hasNext: selectedIdx < total - 1
+					})
+				]
+			})
+		]
+	});
+}
+//#endregion
 //#region src/App.tsx
 function LoadingScreen() {
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
@@ -84309,7 +85395,7 @@ function DatasetRedirect() {
 	}, [loadDatasets]);
 	if (err) return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ErrorScreen, { message: err });
 	if (datasets === null) return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(LoadingScreen, {});
-	if (datasets.length === 0) return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ErrorScreen, { message: "No datasets found on this server." });
+	if (datasets.length === 0) return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ExplorerHome, {});
 	if (datasets.length === 1) return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Navigate, {
 		to: `/${datasets[0].slug}/findings`,
 		replace: true
@@ -84376,30 +85462,41 @@ function FindingsPage() {
 	] });
 }
 function App() {
-	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Routes, { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Route, {
-		path: "/",
-		element: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(DatasetRedirect, {})
-	}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Route, {
-		path: "/:slug",
-		element: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(DatasetLayout, {}),
-		children: [
-			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Route, {
-				index: true,
-				element: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Navigate, {
-					to: "findings",
-					replace: true
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Routes, { children: [
+		/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Route, {
+			path: "/",
+			element: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(DatasetRedirect, {})
+		}),
+		/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Route, {
+			path: "/explore",
+			element: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ExplorerHome, {})
+		}),
+		/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Route, {
+			path: "/explore/:sessionId",
+			element: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ExplorerView, {})
+		}),
+		/* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Route, {
+			path: "/:slug",
+			element: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(DatasetLayout, {}),
+			children: [
+				/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Route, {
+					index: true,
+					element: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Navigate, {
+						to: "findings",
+						replace: true
+					})
+				}),
+				/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Route, {
+					path: "findings",
+					element: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(FindingsPage, {})
+				}),
+				/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Route, {
+					path: "samples",
+					element: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(SamplesTab, {})
 				})
-			}),
-			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Route, {
-				path: "findings",
-				element: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(FindingsPage, {})
-			}),
-			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Route, {
-				path: "samples",
-				element: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(SamplesTab, {})
-			})
-		]
-	})] });
+			]
+		})
+	] });
 }
 //#endregion
 //#region src/main.tsx

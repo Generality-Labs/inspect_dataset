@@ -8,6 +8,8 @@ import { FindingsList } from "./components/FindingsList";
 import { FindingDetail } from "./components/FindingDetail";
 import { SamplesTab } from "./components/SamplesTab";
 import { DatasetPicker } from "./components/DatasetPicker";
+import { ExplorerHome } from "./components/ExplorerHome";
+import { ExplorerView } from "./components/ExplorerView";
 import { exportUrl } from "./api";
 import type { DatasetInfo } from "./types";
 import { fetchDatasets } from "./api";
@@ -32,7 +34,7 @@ function ErrorScreen({ message }: { message: string }) {
   );
 }
 
-// ── Root redirect — fetch datasets, then route accordingly ─────────────────
+// ── Root redirect — fetch datasets or show explorer home ──────────────────
 
 function DatasetRedirect() {
   const loadDatasets = useStore((s) => s.loadDatasets);
@@ -50,8 +52,11 @@ function DatasetRedirect() {
 
   if (err) return <ErrorScreen message={err} />;
   if (datasets === null) return <LoadingScreen />;
-  if (datasets.length === 0)
-    return <ErrorScreen message="No datasets found on this server." />;
+
+  // No pre-loaded findings → go straight to explorer home
+  if (datasets.length === 0) return <ExplorerHome />;
+
+  // One dataset pre-loaded → jump directly to findings view
   if (datasets.length === 1)
     return <Navigate to={`/${datasets[0].slug}/findings`} replace />;
 
@@ -128,6 +133,10 @@ function App() {
   return (
     <Routes>
       <Route path="/" element={<DatasetRedirect />} />
+      {/* Explorer routes */}
+      <Route path="/explore" element={<ExplorerHome />} />
+      <Route path="/explore/:sessionId" element={<ExplorerView />} />
+      {/* Findings routes */}
       <Route path="/:slug" element={<DatasetLayout />}>
         <Route index element={<Navigate to="findings" replace />} />
         <Route path="findings" element={<FindingsPage />} />

@@ -819,12 +819,13 @@ wheels = [
 
 [[package]]
 name = "inspect-dataset"
-version = "0.3.4"
+version = "0.4.0"
 source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },
     { name = "click" },
     { name = "datasets" },
+    { name = "openai" },
     { name = "python-dotenv" },
     { name = "rich" },
 ]
@@ -852,6 +853,7 @@ requires-dist = [
     { name = "click", specifier = ">=8.0" },
     { name = "datasets", specifier = ">=2.0" },
     { name = "inspect-ai", marker = "extra == 'inspect'", specifier = ">=0.3" },
+    { name = "openai", specifier = ">=2.30.0" },
     { name = "openai", marker = "extra == 'inspect'", specifier = ">=2.30.0" },
     { name = "python-dotenv", specifier = ">=1.0" },
     { name = "rich", specifier = ">=13.0" },

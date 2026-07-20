@@ -1,6 +1,5 @@
 """API tests for serving local annotation datasets in the view server."""
 
-import asyncio
 import json
 
 import pytest
@@ -69,15 +68,13 @@ def findings_dir(tmp_path):
     return out
 
 
-def test_sample_detail_serves_artifacts(findings_dir):
-    async def run() -> dict:
-        app = create_app(findings_dir)
-        async with TestClient(TestServer(app)) as client:
-            datasets = await (await client.get("/api/datasets")).json()
-            slug = datasets[0]["slug"]
-            return await (await client.get(f"/api/{slug}/sample/0")).json()
+async def test_sample_detail_serves_artifacts(findings_dir):
+    app = create_app(findings_dir)
+    async with TestClient(TestServer(app)) as client:
+        datasets = await (await client.get("/api/datasets")).json()
+        slug = datasets[0]["slug"]
+        detail = await (await client.get(f"/api/{slug}/sample/0")).json()
 
-    detail = asyncio.run(run())
     assert detail["id"] == "s1"
     assert detail["answer"].startswith("# Title")
     assert detail["line_offset"] == 7
