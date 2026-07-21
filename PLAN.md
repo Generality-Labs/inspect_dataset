@@ -519,10 +519,10 @@ Design principles:
 - [x] `numeric_provenance` — every number in gold (comma/`$`-normalised) must appear in at least one tool output; misses are high-severity transcription-error candidates
 - [x] `tool_consensus` — folded into `text_layer_recall`'s none-of-the-tools / all-of-the-tools semantics rather than shipping as a separate score-based scanner
 
-#### v0.6.2 — Vision LLM scanners
+#### v0.6.2 — Vision LLM scanners (in progress)
 
-- [ ] Extend the LLM scanner plumbing to image inputs
-- [ ] `gold_fidelity` — page image + gold markdown → specific discrepancies with locations
+- [x] Extend the LLM scanner plumbing to image inputs — `judge_batch_vision()` in `_llm.py` sends the page image as an inspect_ai `ContentImage` block ahead of the prompt text; `page_image()` in `_artifacts.py` resolves `<artifacts-dir>/page.<ext>` from `--files-root`. Credentials flow through the existing `--model` flag (e.g. `anthropic/claude-opus-4-8`); no new plumbing.
+- [x] `gold_fidelity` — page image + gold markdown → material discrepancy judgment (wrong numbers, dropped/invented rows, garbled text). Skips records with no page image; text-only unit tests use a mocked model, so the suite needs no API key.
 - [ ] `gold_completeness` — page regions not represented in gold at all
 - [ ] `reading_order` — gold block order matches visual reading order
 

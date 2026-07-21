@@ -12,6 +12,9 @@ from inspect_dataset.scanners.duplicate_questions import duplicate_questions
 from inspect_dataset.scanners.encoding_issues import encoding_issues
 from inspect_dataset.scanners.extraction_artifacts import extraction_artifacts
 from inspect_dataset.scanners.forced_choice_leakage import forced_choice_leakage
+from inspect_dataset.scanners.gold_fidelity import (
+    _make_scanner as _make_gold_fidelity,
+)
 from inspect_dataset.scanners.image_mime_type import image_mime_type
 from inspect_dataset.scanners.inconsistent_format import inconsistent_format
 from inspect_dataset.scanners.label_correctness import (
@@ -43,6 +46,7 @@ LLM_SCANNER_FACTORIES: dict[str, Callable[..., LLMScannerDef]] = {
     "ambiguity": _make_ambiguity,
     "label_correctness": _make_label_correctness,
     "answerability": _make_answerability,
+    "gold_fidelity": _make_gold_fidelity,
 }
 
 ALL_SCANNER_NAMES: set[str] = set(BUILTIN_SCANNER_NAMES) | set(LLM_SCANNER_FACTORIES)

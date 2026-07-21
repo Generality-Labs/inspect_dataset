@@ -130,7 +130,8 @@ def cli() -> None:
     help=(
         "LLM model for AI-powered scanners "
         "(e.g. openai/gpt-4o-mini). Enables: "
-        "ambiguity, label_correctness, answerability. "
+        "ambiguity, label_correctness, answerability, gold_fidelity "
+        "(gold_fidelity is vision-based and needs --files-root for the page image). "
         "[env: INSPECT_DATASET_MODEL]"
     ),
 )
