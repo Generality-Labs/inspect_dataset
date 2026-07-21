@@ -105,6 +105,7 @@ export async function loadExplorerSession(
   sourceType: "hf" | "inspect_task",
   split: string,
   limit?: number,
+  config?: string,
 ): Promise<ExplorerSession> {
   const res = await fetch(`${BASE}/explore/load`, {
     method: "POST",
@@ -114,6 +115,7 @@ export async function loadExplorerSession(
       source_type: sourceType,
       split,
       limit: limit ?? null,
+      config: config || null,
     }),
   });
   if (!res.ok) {

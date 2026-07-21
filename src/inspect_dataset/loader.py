@@ -48,8 +48,13 @@ def load_hf_dataset(
     split: str = "train",
     revision: str | None = None,
     limit: int | None = None,
+    config: str | None = None,
 ) -> list[Record]:
     """Load a HuggingFace dataset into a list of plain dicts.
+
+    ``config`` is the dataset's config/subset name (HF's ``name`` kwarg) —
+    required for datasets that define more than one, e.g. ``load_dataset(
+    "sentientfutures/ahb", "dimensions")``.
 
     Image fields (bytes dicts) and other non-serialisable types are preserved
     as-is — scanners that don't need them will simply ignore them.
@@ -67,6 +72,8 @@ def load_hf_dataset(
     kwargs: dict[str, Any] = {"split": split}
     if revision:
         kwargs["revision"] = revision
+    if config:
+        kwargs["name"] = config
 
     dataset = load_dataset(path, **kwargs)
 

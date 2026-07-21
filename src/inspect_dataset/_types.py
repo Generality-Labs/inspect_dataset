@@ -53,6 +53,7 @@ class ScanRun:
     findings: list[Finding]
     source_type: str = "hf"  # "hf" | "inspect_task"
     revision: str | None = None  # HF revision / commit SHA
+    config: str | None = None  # HF config/subset name (multi-config datasets)
 
     def by_scanner(self) -> dict[str, list[Finding]]:
         result: dict[str, list[Finding]] = {}

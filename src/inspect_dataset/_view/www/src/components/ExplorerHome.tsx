@@ -1,12 +1,88 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useStore } from "../store";
 import {
   fetchCachedDatasets,
+  fetchDatasets,
   fetchHfSchema,
   fetchInstalledTasks,
 } from "../api";
-import type { CachedDataset, InstalledTask, SchemaField } from "../types";
+import type {
+  CachedDataset,
+  DatasetInfo,
+  InstalledTask,
+  SchemaField,
+} from "../types";
+
+// ── Local findings (pre-loaded via `inspect-dataset view <dir>`) ─────────────
+
+const SEVERITY_COLORS: Record<string, string> = {
+  high: "bg-danger",
+  medium: "bg-warning text-dark",
+  low: "bg-secondary",
+};
+
+function SeverityPills({ bySeverity }: { bySeverity: Record<string, number> }) {
+  const entries = ["high", "medium", "low"]
+    .filter((s) => (bySeverity[s] ?? 0) > 0)
+    .map((s) => ({ severity: s, count: bySeverity[s] }));
+
+  if (entries.length === 0)
+    return <span className="text-body-secondary small">No findings</span>;
+
+  return (
+    <span>
+      {entries.map(({ severity, count }) => (
+        <span
+          key={severity}
+          className={`badge ${SEVERITY_COLORS[severity] ?? "bg-secondary"} me-1`}
+        >
+          {count} {severity}
+        </span>
+      ))}
+    </span>
+  );
+}
+
+function LocalFindingsSection({ findings }: { findings: DatasetInfo[] }) {
+  return (
+    <div className="mb-4">
+      <h1 className="h4 mb-1">Local findings</h1>
+      <p className="text-body-secondary mb-3">
+        Scan results loaded from disk. Select one to review and triage its
+        findings.
+      </p>
+      <div className="row g-3">
+        {findings.map((ds) => (
+          <div className="col-md-4" key={ds.slug}>
+            <Link
+              to={`/${ds.slug}/findings`}
+              className="card text-decoration-none h-100 text-body"
+              style={{ cursor: "pointer" }}
+            >
+              <div className="card-body">
+                <h6 className="card-title fw-semibold mb-1">
+                  {ds.dataset_name}
+                </h6>
+                {ds.split && (
+                  <div className="text-body-secondary small mb-2">
+                    [{ds.split}]
+                  </div>
+                )}
+                <div className="small mb-2 text-body-secondary">
+                  {ds.total_samples.toLocaleString()} samples ·{" "}
+                  {ds.total_findings} findings
+                </div>
+                <SeverityPills bySeverity={ds.by_severity} />
+              </div>
+            </Link>
+          </div>
+        ))}
+      </div>
+      <hr className="my-4" />
+    </div>
+  );
+}
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -26,12 +102,14 @@ function ManualEntryForm({
     sourceType: "hf" | "inspect_task",
     split: string,
     limit?: number,
+    config?: string,
   ) => void;
 }) {
   const [source, setSource] = useState("");
   const [sourceType, setSourceType] = useState<"hf" | "inspect_task">("hf");
   const [split, setSplit] = useState("train");
   const [limit, setLimit] = useState("");
+  const [config, setConfig] = useState("");
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -41,6 +119,7 @@ function ManualEntryForm({
       sourceType,
       split || "train",
       limit ? parseInt(limit, 10) : undefined,
+      config.trim() || undefined,
     );
   };
 
@@ -86,6 +165,22 @@ function ManualEntryForm({
               placeholder="train"
               value={split}
               onChange={(e) => setSplit(e.target.value)}
+            />
+          </div>
+        )}
+
+        {sourceType === "hf" && (
+          <div className="col-sm-4">
+            <label className="form-label fw-semibold small">
+              Config{" "}
+              <span className="text-body-secondary fw-normal">(optional)</span>
+            </label>
+            <input
+              type="text"
+              className="form-control form-control-sm"
+              placeholder="required for multi-config datasets"
+              value={config}
+              onChange={(e) => setConfig(e.target.value)}
             />
           </div>
         )}
@@ -138,31 +233,35 @@ function SchemaPreview({
   onClose,
   onOpen,
   split,
+  config,
 }: {
   repoId: string;
   split: string;
+  config?: string;
   onClose: () => void;
   onOpen: () => void;
 }) {
-  // Loaded schema is keyed by repoId so it (and the loading flag) can be
-  // derived instead of set synchronously in the effect.
+  // Loaded schema is keyed by (repoId, config) so it (and the loading flag)
+  // can be derived instead of set synchronously in the effect.
   const [loaded, setLoaded] = useState<{
-    repoId: string;
+    key: string;
     schema: SchemaField[] | null;
   } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    fetchHfSchema(repoId).then((info) => {
-      if (!cancelled) setLoaded({ repoId, schema: info?.schema ?? null });
+    const key = `${repoId}:${config ?? ""}`;
+    fetchHfSchema(repoId, config).then((info) => {
+      if (!cancelled) setLoaded({ key, schema: info?.schema ?? null });
     });
     return () => {
       cancelled = true;
     };
-  }, [repoId]);
+  }, [repoId, config]);
 
-  const schema = loaded && loaded.repoId === repoId ? loaded.schema : null;
-  const loading = loaded === null || loaded.repoId !== repoId;
+  const currentKey = `${repoId}:${config ?? ""}`;
+  const schema = loaded && loaded.key === currentKey ? loaded.schema : null;
+  const loading = loaded === null || loaded.key !== currentKey;
 
   return (
     <div
@@ -230,12 +329,15 @@ function CachedDatasetsList({
 }: {
   datasets: CachedDataset[];
   loading: boolean;
-  onSelect: (ds: CachedDataset, split: string) => void;
+  onSelect: (ds: CachedDataset, split: string, config?: string) => void;
 }) {
   const [search, setSearch] = useState("");
   const [selectedSplits, setSelectedSplits] = useState<Record<string, string>>(
     {},
   );
+  const [selectedConfigs, setSelectedConfigs] = useState<
+    Record<string, string>
+  >({});
   const [previewRepo, setPreviewRepo] = useState<string | null>(null);
 
   if (loading) {
@@ -276,14 +378,21 @@ function CachedDatasetsList({
               <tr>
                 <th>Dataset</th>
                 <th style={{ width: 110 }}>Size</th>
+                <th style={{ width: 120 }}>Config</th>
                 <th style={{ width: 120 }}>Split</th>
                 <th style={{ width: 80 }}></th>
               </tr>
             </thead>
             <tbody>
               {filtered.map((ds) => {
+                // Tolerate older backends that don't return these fields.
+                const splits = ds.splits ?? [];
+                const configs = ds.configs ?? [];
                 const split =
-                  selectedSplits[ds.repo_id] ?? ds.splits[0] ?? "train";
+                  selectedSplits[ds.repo_id] ?? splits[0] ?? "train";
+                // undefined when no config is known → load with no name kwarg
+                const config =
+                  selectedConfigs[ds.repo_id] ?? configs[0] ?? undefined;
                 const isSelected = previewRepo === ds.repo_id;
                 return (
                   <tr
@@ -305,7 +414,32 @@ function CachedDatasetsList({
                       {formatBytes(ds.size_on_disk)}
                     </td>
                     <td>
-                      {ds.splits.length > 1 ? (
+                      {configs.length > 1 ? (
+                        <select
+                          className="form-select form-select-sm py-0"
+                          style={{ fontSize: "0.8rem" }}
+                          value={config}
+                          onChange={(e) =>
+                            setSelectedConfigs((prev) => ({
+                              ...prev,
+                              [ds.repo_id]: e.target.value,
+                            }))
+                          }
+                        >
+                          {configs.map((c) => (
+                            <option key={c} value={c}>
+                              {c}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <span className="text-body-secondary">
+                          {config ?? "—"}
+                        </span>
+                      )}
+                    </td>
+                    <td>
+                      {splits.length > 1 ? (
                         <select
                           className="form-select form-select-sm py-0"
                           style={{ fontSize: "0.8rem" }}
@@ -317,7 +451,7 @@ function CachedDatasetsList({
                             }))
                           }
                         >
-                          {ds.splits.map((s) => (
+                          {splits.map((s) => (
                             <option key={s} value={s}>
                               {s}
                             </option>
@@ -330,7 +464,7 @@ function CachedDatasetsList({
                     <td>
                       <button
                         className="btn btn-sm btn-outline-primary py-0"
-                        onClick={() => onSelect(ds, split)}
+                        onClick={() => onSelect(ds, split, config)}
                       >
                         Open
                       </button>
@@ -352,16 +486,20 @@ function CachedDatasetsList({
           (() => {
             const ds = filtered.find((d) => d.repo_id === previewRepo);
             const split = ds
-              ? (selectedSplits[previewRepo] ?? ds.splits[0] ?? "train")
+              ? (selectedSplits[previewRepo] ?? ds.splits?.[0] ?? "train")
               : "train";
+            const config = ds
+              ? (selectedConfigs[previewRepo] ?? ds.configs?.[0] ?? undefined)
+              : undefined;
             return (
               <SchemaPreview
                 key={previewRepo}
                 repoId={previewRepo}
                 split={split}
+                config={config}
                 onClose={() => setPreviewRepo(null)}
                 onOpen={() => {
-                  if (ds) onSelect(ds, split);
+                  if (ds) onSelect(ds, split, config);
                 }}
               />
             );
@@ -472,6 +610,7 @@ export function ExplorerHome() {
   );
   const [cachedDatasets, setCachedDatasets] = useState<CachedDataset[]>([]);
   const [installedTasks, setInstalledTasks] = useState<InstalledTask[]>([]);
+  const [localFindings, setLocalFindings] = useState<DatasetInfo[]>([]);
   const [cachedLoading, setCachedLoading] = useState(true);
   const [tasksLoading, setTasksLoading] = useState(true);
 
@@ -481,6 +620,9 @@ export function ExplorerHome() {
   const navigate = useNavigate();
 
   useEffect(() => {
+    fetchDatasets()
+      .then((ds) => setLocalFindings(ds))
+      .catch(() => setLocalFindings([]));
     fetchCachedDatasets().then((ds) => {
       setCachedDatasets(ds);
       setCachedLoading(false);
@@ -496,12 +638,14 @@ export function ExplorerHome() {
     sourceType: "hf" | "inspect_task",
     split: string,
     limit?: number,
+    config?: string,
   ) => {
     const session = await startExplorerSession(
       source,
       sourceType,
       split,
       limit,
+      config,
     );
     if (session) {
       navigate(`/explore/${session.session_id}`);
@@ -522,6 +666,10 @@ export function ExplorerHome() {
       </nav>
 
       <div className="w-100 px-3 py-4" style={{ maxWidth: 860 }}>
+        {localFindings.length > 0 && (
+          <LocalFindingsSection findings={localFindings} />
+        )}
+
         <h1 className="h4 mb-1">Open a dataset</h1>
         <p className="text-body-secondary mb-4">
           Choose from your local cache, installed inspect tasks, or enter a
@@ -590,7 +738,9 @@ export function ExplorerHome() {
               <CachedDatasetsList
                 datasets={cachedDatasets}
                 loading={cachedLoading}
-                onSelect={(ds, split) => handleLoad(ds.repo_id, "hf", split)}
+                onSelect={(ds, split, config) =>
+                  handleLoad(ds.repo_id, "hf", split, undefined, config)
+                }
               />
             )}
             {activeTab === "tasks" && (

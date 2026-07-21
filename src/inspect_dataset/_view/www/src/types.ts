@@ -11,6 +11,7 @@ export interface CachedDataset {
   repo_id: string;
   size_on_disk: number;
   splits: string[];
+  configs: string[];
   last_modified: number;
 }
 
@@ -24,6 +25,7 @@ export interface ExplorerSession {
   source: string;
   source_type: "hf" | "inspect_task";
   split: string;
+  config: string | null;
   total: number;
   columns: string[];
 }

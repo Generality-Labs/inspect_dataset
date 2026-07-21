@@ -41,6 +41,8 @@ async def test_discover_cached_returns_list(server):
         assert "repo_id" in item
         assert "size_on_disk" in item
         assert "splits" in item
+        assert "configs" in item
+        assert isinstance(item["configs"], list)
 
 
 async def test_discover_tasks_returns_list(server):
