@@ -11,6 +11,7 @@ export interface CachedDataset {
   repo_id: string;
   size_on_disk: number;
   splits: string[];
+  configs: string[];
   last_modified: number;
 }
 

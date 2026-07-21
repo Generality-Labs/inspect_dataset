@@ -571,7 +571,8 @@ async def handle_explore_load(request: web.Request) -> web.Response:
           "source": "cais/hle",          # HF slug or inspect task spec
           "source_type": "hf",           # "hf" | "inspect_task"
           "split": "test",               # optional, default "train"
-          "limit": 500                   # optional
+          "limit": 500,                  # optional
+          "config": "dimensions"         # optional HF config/subset name
         }
 
     Returns a session ID and basic metadata.
@@ -585,6 +586,7 @@ async def handle_explore_load(request: web.Request) -> web.Response:
     source_type: str = body.get("source_type", "hf")
     split: str = body.get("split", "train")
     limit: int | None = body.get("limit")
+    config: str | None = body.get("config") or None
 
     if not source:
         return web.json_response({"error": "source is required"}, status=400)
@@ -598,7 +600,7 @@ async def handle_explore_load(request: web.Request) -> web.Response:
             from inspect_dataset._types import FieldMap
             from inspect_dataset.loader import load_hf_dataset, resolve_fields
 
-            records = await asyncio.to_thread(load_hf_dataset, source, split, None, limit)
+            records = await asyncio.to_thread(load_hf_dataset, source, split, None, limit, config)
             try:
                 fields = resolve_fields(records, None, None, None, None)
             except Exception:
@@ -613,7 +615,10 @@ async def handle_explore_load(request: web.Request) -> web.Response:
     if source_type == "hf":
         from inspect_dataset._view.discovery import fetch_hf_schema
 
-        schema = await asyncio.to_thread(fetch_hf_schema, source)
+        try:
+            schema = await asyncio.to_thread(fetch_hf_schema, source, config)
+        except Exception as exc:
+            logger.warning("Could not fetch HF schema for %s: %s", source, exc)
 
     if not schema:
         schema = _compute_schema(records)
@@ -623,6 +628,7 @@ async def handle_explore_load(request: web.Request) -> web.Response:
         "source": source,
         "source_type": source_type,
         "split": split,
+        "config": config,
         "total": len(records),
         "records": records,
         "fields": fields,

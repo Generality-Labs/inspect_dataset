@@ -18,6 +18,9 @@ wheels/
 # Git worktrees
 .worktrees/
 
+# Playwright MCP logs/snapshots
+.playwright-mcp/
+
 # inspect-dataset generated files
 findings/
 !src/inspect_dataset/_view/www/dist/

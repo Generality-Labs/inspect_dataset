@@ -12036,7 +12036,7 @@ async function fetchInstalledTasks() {
 	if (!res.ok) return [];
 	return res.json();
 }
-async function loadExplorerSession(source, sourceType, split, limit) {
+async function loadExplorerSession(source, sourceType, split, limit, config) {
 	const res = await fetch(`${BASE}/explore/load`, {
 		method: "POST",
 		headers: { "Content-Type": "application/json" },
@@ -12044,7 +12044,8 @@ async function loadExplorerSession(source, sourceType, split, limit) {
 			source,
 			source_type: sourceType,
 			split,
-			limit: limit ?? null
+			limit: limit ?? null,
+			config: config || null
 		})
 	});
 	if (!res.ok) {
@@ -12088,7 +12089,7 @@ var useStore = create$1((set, get) => ({
 	explorerLoading: false,
 	explorerError: null,
 	setSelectedFinding: (finding) => set({ selectedFinding: finding }),
-	startExplorerSession: async (source, sourceType, split, limit) => {
+	startExplorerSession: async (source, sourceType, split, limit, config) => {
 		set({
 			explorerLoading: true,
 			explorerError: null,
@@ -12096,7 +12097,7 @@ var useStore = create$1((set, get) => ({
 			explorerSchema: null
 		});
 		try {
-			const session = await loadExplorerSession(source, sourceType, split, limit);
+			const session = await loadExplorerSession(source, sourceType, split, limit, config);
 			set({
 				explorerSession: session,
 				explorerSchema: await fetchExplorerSchema(session.session_id),
@@ -12274,8 +12275,10 @@ function Header() {
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("nav", {
 		className: "navbar navbar-expand bg-body-tertiary border-bottom px-3",
 		children: [
-			/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-				className: "navbar-brand fw-bold",
+			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Link, {
+				to: "/",
+				className: "navbar-brand fw-bold text-decoration-none",
+				title: "Back to home",
 				children: "inspect-dataset"
 			}),
 			datasets.length > 1 ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("select", {
@@ -12314,24 +12317,36 @@ function Header() {
 			}),
 			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("ul", {
 				className: "nav nav-pills me-3",
-				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("li", {
-					className: "nav-item",
-					children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(NavLink, {
-						to: `/${slug}/findings`,
-						className: ({ isActive }) => `nav-link${isActive ? " active" : ""}`,
-						children: ["Findings", /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-							className: "badge bg-secondary ms-1",
-							children: findings.length
-						})]
+				children: [
+					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("li", {
+						className: "nav-item",
+						children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Link, {
+							to: "/",
+							className: "nav-link",
+							title: "Back to all datasets",
+							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("i", { className: "bi bi-house me-1" }), "Home"]
+						})
+					}),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("li", {
+						className: "nav-item",
+						children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(NavLink, {
+							to: `/${slug}/findings`,
+							className: ({ isActive }) => `nav-link${isActive ? " active" : ""}`,
+							children: ["Findings", /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+								className: "badge bg-secondary ms-1",
+								children: findings.length
+							})]
+						})
+					}),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("li", {
+						className: "nav-item",
+						children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(NavLink, {
+							to: `/${slug}/samples`,
+							className: ({ isActive }) => `nav-link${isActive ? " active" : ""}`,
+							children: "Samples"
+						})
 					})
-				}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("li", {
-					className: "nav-item",
-					children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(NavLink, {
-						to: `/${slug}/samples`,
-						className: ({ isActive }) => `nav-link${isActive ? " active" : ""}`,
-						children: "Samples"
-					})
-				})]
+				]
 			}),
 			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
 				className: "navbar-text small text-body-secondary",
@@ -84282,7 +84297,7 @@ function SamplesTab() {
 	});
 }
 //#endregion
-//#region src/components/DatasetPicker.tsx
+//#region src/components/ExplorerHome.tsx
 var SEVERITY_COLORS = {
 	high: "bg-danger",
 	medium: "bg-warning text-dark",
@@ -84310,24 +84325,21 @@ function SeverityPills({ bySeverity }) {
 		]
 	}, severity)) });
 }
-function DatasetPicker({ datasets }) {
+function LocalFindingsSection({ findings }) {
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-		className: "d-flex flex-column vh-100",
-		children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("nav", {
-			className: "navbar bg-body-tertiary border-bottom px-3",
-			children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-				className: "navbar-brand fw-bold",
-				children: "inspect-dataset"
-			})
-		}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-			className: "container-fluid p-4",
-			style: { maxWidth: 900 },
-			children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("h5", {
-				className: "mb-4 text-body-secondary",
-				children: "Select a dataset to explore"
-			}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+		className: "mb-4",
+		children: [
+			/* @__PURE__ */ (0, import_jsx_runtime.jsx)("h1", {
+				className: "h4 mb-1",
+				children: "Local findings"
+			}),
+			/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+				className: "text-body-secondary mb-3",
+				children: "Scan results loaded from disk. Select one to review and triage its findings."
+			}),
+			/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 				className: "row g-3",
-				children: datasets.map((ds) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+				children: findings.map((ds) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 					className: "col-md-4",
 					children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Link, {
 						to: `/${ds.slug}/findings`,
@@ -84363,12 +84375,11 @@ function DatasetPicker({ datasets }) {
 						})
 					})
 				}, ds.slug))
-			})]
-		})]
+			}),
+			/* @__PURE__ */ (0, import_jsx_runtime.jsx)("hr", { className: "my-4" })
+		]
 	});
 }
-//#endregion
-//#region src/components/ExplorerHome.tsx
 function formatBytes(bytes) {
 	if (bytes < 1024) return `${bytes} B`;
 	if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -84380,10 +84391,11 @@ function ManualEntryForm({ onLoad }) {
 	const [sourceType, setSourceType] = (0, import_react.useState)("hf");
 	const [split, setSplit] = (0, import_react.useState)("train");
 	const [limit, setLimit] = (0, import_react.useState)("");
+	const [config, setConfig] = (0, import_react.useState)("");
 	const handleSubmit = (e) => {
 		e.preventDefault();
 		if (!source.trim()) return;
-		onLoad(source.trim(), sourceType, split || "train", limit ? parseInt(limit, 10) : void 0);
+		onLoad(source.trim(), sourceType, split || "train", limit ? parseInt(limit, 10) : void 0, config.trim() || void 0);
 	};
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("form", {
 		onSubmit: handleSubmit,
@@ -84435,6 +84447,26 @@ function ManualEntryForm({ onLoad }) {
 						onChange: (e) => setSplit(e.target.value)
 					})]
 				}),
+				sourceType === "hf" && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+					className: "col-sm-4",
+					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("label", {
+						className: "form-label fw-semibold small",
+						children: [
+							"Config",
+							" ",
+							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+								className: "text-body-secondary fw-normal",
+								children: "(optional)"
+							})
+						]
+					}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+						type: "text",
+						className: "form-control form-control-sm",
+						placeholder: "required for multi-config datasets",
+						value: config,
+						onChange: (e) => setConfig(e.target.value)
+					})]
+				}),
 				/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 					className: "col-sm-4",
 					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("label", {
@@ -84479,22 +84511,24 @@ var TYPE_BADGE$1 = {
 	dict: "bg-secondary",
 	null: "bg-light text-dark border"
 };
-function SchemaPreview({ repoId, onClose, onOpen, split }) {
+function SchemaPreview({ repoId, onClose, onOpen, split, config }) {
 	const [loaded, setLoaded] = (0, import_react.useState)(null);
 	(0, import_react.useEffect)(() => {
 		let cancelled = false;
-		fetchHfSchema(repoId).then((info) => {
+		const key = `${repoId}:${config ?? ""}`;
+		fetchHfSchema(repoId, config).then((info) => {
 			if (!cancelled) setLoaded({
-				repoId,
+				key,
 				schema: info?.schema ?? null
 			});
 		});
 		return () => {
 			cancelled = true;
 		};
-	}, [repoId]);
-	const schema = loaded && loaded.repoId === repoId ? loaded.schema : null;
-	const loading = loaded === null || loaded.repoId !== repoId;
+	}, [repoId, config]);
+	const currentKey = `${repoId}:${config ?? ""}`;
+	const schema = loaded && loaded.key === currentKey ? loaded.schema : null;
+	const loading = loaded === null || loaded.key !== currentKey;
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 		className: "card border shadow",
 		style: {
@@ -84564,6 +84598,7 @@ function SchemaPreview({ repoId, onClose, onOpen, split }) {
 function CachedDatasetsList({ datasets, loading, onSelect }) {
 	const [search, setSearch] = (0, import_react.useState)("");
 	const [selectedSplits, setSelectedSplits] = (0, import_react.useState)({});
+	const [selectedConfigs, setSelectedConfigs] = (0, import_react.useState)({});
 	const [previewRepo, setPreviewRepo] = (0, import_react.useState)(null);
 	if (loading) return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 		className: "text-center py-4 text-body-secondary small",
@@ -84602,12 +84637,19 @@ function CachedDatasetsList({ datasets, loading, onSelect }) {
 						}),
 						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("th", {
 							style: { width: 120 },
+							children: "Config"
+						}),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("th", {
+							style: { width: 120 },
 							children: "Split"
 						}),
 						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("th", { style: { width: 80 } })
 					] })
 				}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("tbody", { children: filtered.map((ds) => {
-					const split = selectedSplits[ds.repo_id] ?? ds.splits[0] ?? "train";
+					const splits = ds.splits ?? [];
+					const configs = ds.configs ?? [];
+					const split = selectedSplits[ds.repo_id] ?? splits[0] ?? "train";
+					const config = selectedConfigs[ds.repo_id] ?? configs[0] ?? void 0;
 					const isSelected = previewRepo === ds.repo_id;
 					return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("tr", {
 						className: isSelected ? "table-active" : "",
@@ -84622,7 +84664,23 @@ function CachedDatasetsList({ datasets, loading, onSelect }) {
 								className: "text-body-secondary",
 								children: formatBytes(ds.size_on_disk)
 							}),
-							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("td", { children: ds.splits.length > 1 ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("select", {
+							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("td", { children: configs.length > 1 ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("select", {
+								className: "form-select form-select-sm py-0",
+								style: { fontSize: "0.8rem" },
+								value: config,
+								onChange: (e) => setSelectedConfigs((prev) => ({
+									...prev,
+									[ds.repo_id]: e.target.value
+								})),
+								children: configs.map((c) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("option", {
+									value: c,
+									children: c
+								}, c))
+							}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+								className: "text-body-secondary",
+								children: config ?? "—"
+							}) }),
+							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("td", { children: splits.length > 1 ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("select", {
 								className: "form-select form-select-sm py-0",
 								style: { fontSize: "0.8rem" },
 								value: split,
@@ -84630,7 +84688,7 @@ function CachedDatasetsList({ datasets, loading, onSelect }) {
 									...prev,
 									[ds.repo_id]: e.target.value
 								})),
-								children: ds.splits.map((s) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("option", {
+								children: splits.map((s) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("option", {
 									value: s,
 									children: s
 								}, s))
@@ -84640,7 +84698,7 @@ function CachedDatasetsList({ datasets, loading, onSelect }) {
 							}) }),
 							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
 								className: "btn btn-sm btn-outline-primary py-0",
-								onClick: () => onSelect(ds, split),
+								onClick: () => onSelect(ds, split, config),
 								children: "Open"
 							}) })
 						]
@@ -84656,13 +84714,15 @@ function CachedDatasetsList({ datasets, loading, onSelect }) {
 			})]
 		}), previewRepo && (() => {
 			const ds = filtered.find((d) => d.repo_id === previewRepo);
-			const split = ds ? selectedSplits[previewRepo] ?? ds.splits[0] ?? "train" : "train";
+			const split = ds ? selectedSplits[previewRepo] ?? ds.splits?.[0] ?? "train" : "train";
+			const config = ds ? selectedConfigs[previewRepo] ?? ds.configs?.[0] ?? void 0 : void 0;
 			return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(SchemaPreview, {
 				repoId: previewRepo,
 				split,
+				config,
 				onClose: () => setPreviewRepo(null),
 				onOpen: () => {
-					if (ds) onSelect(ds, split);
+					if (ds) onSelect(ds, split, config);
 				}
 			}, previewRepo);
 		})()]
@@ -84732,6 +84792,7 @@ function ExplorerHome() {
 	const [activeTab, setActiveTab] = (0, import_react.useState)("cached");
 	const [cachedDatasets, setCachedDatasets] = (0, import_react.useState)([]);
 	const [installedTasks, setInstalledTasks] = (0, import_react.useState)([]);
+	const [localFindings, setLocalFindings] = (0, import_react.useState)([]);
 	const [cachedLoading, setCachedLoading] = (0, import_react.useState)(true);
 	const [tasksLoading, setTasksLoading] = (0, import_react.useState)(true);
 	const startExplorerSession = useStore((s) => s.startExplorerSession);
@@ -84739,6 +84800,7 @@ function ExplorerHome() {
 	const explorerError = useStore((s) => s.explorerError);
 	const navigate = useNavigate();
 	(0, import_react.useEffect)(() => {
+		fetchDatasets().then((ds) => setLocalFindings(ds)).catch(() => setLocalFindings([]));
 		fetchCachedDatasets().then((ds) => {
 			setCachedDatasets(ds);
 			setCachedLoading(false);
@@ -84748,8 +84810,8 @@ function ExplorerHome() {
 			setTasksLoading(false);
 		});
 	}, []);
-	const handleLoad = async (source, sourceType, split, limit) => {
-		const session = await startExplorerSession(source, sourceType, split, limit);
+	const handleLoad = async (source, sourceType, split, limit, config) => {
+		const session = await startExplorerSession(source, sourceType, split, limit, config);
 		if (session) navigate(`/explore/${session.session_id}`);
 	};
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
@@ -84771,6 +84833,7 @@ function ExplorerHome() {
 			className: "w-100 px-3 py-4",
 			style: { maxWidth: 860 },
 			children: [
+				localFindings.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(LocalFindingsSection, { findings: localFindings }),
 				/* @__PURE__ */ (0, import_jsx_runtime.jsx)("h1", {
 					className: "h4 mb-1",
 					children: "Open a dataset"
@@ -84845,7 +84908,7 @@ function ExplorerHome() {
 							activeTab === "cached" && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(CachedDatasetsList, {
 								datasets: cachedDatasets,
 								loading: cachedLoading,
-								onSelect: (ds, split) => handleLoad(ds.repo_id, "hf", split)
+								onSelect: (ds, split, config) => handleLoad(ds.repo_id, "hf", split, void 0, config)
 							}),
 							activeTab === "tasks" && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(InstalledTasksList, {
 								tasks: installedTasks,
@@ -85383,25 +85446,6 @@ function ErrorScreen({ message }) {
 		})
 	});
 }
-function DatasetRedirect() {
-	const loadDatasets = useStore((s) => s.loadDatasets);
-	const [datasets, setDatasets] = (0, import_react.useState)(null);
-	const [err, setErr] = (0, import_react.useState)(null);
-	(0, import_react.useEffect)(() => {
-		fetchDatasets().then((ds) => {
-			loadDatasets();
-			setDatasets(ds);
-		}).catch((e) => setErr(String(e)));
-	}, [loadDatasets]);
-	if (err) return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ErrorScreen, { message: err });
-	if (datasets === null) return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(LoadingScreen, {});
-	if (datasets.length === 0) return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ExplorerHome, {});
-	if (datasets.length === 1) return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Navigate, {
-		to: `/${datasets[0].slug}/findings`,
-		replace: true
-	});
-	return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(DatasetPicker, { datasets });
-}
 function DatasetLayout() {
 	const { slug } = useParams();
 	const loadDataset = useStore((s) => s.loadDataset);
@@ -85465,7 +85509,7 @@ function App() {
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Routes, { children: [
 		/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Route, {
 			path: "/",
-			element: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(DatasetRedirect, {})
+			element: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ExplorerHome, {})
 		}),
 		/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Route, {
 			path: "/explore",
