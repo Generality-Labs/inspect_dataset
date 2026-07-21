@@ -25,6 +25,7 @@ export interface ExplorerSession {
   source: string;
   source_type: "hf" | "inspect_task";
   split: string;
+  config: string | null;
   total: number;
   columns: string[];
 }

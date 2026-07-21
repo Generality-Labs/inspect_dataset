@@ -94,3 +94,24 @@ def test_schema_none_when_api_unavailable(monkeypatch):
 def test_schema_none_when_no_dataset_info(monkeypatch):
     _patch_response(monkeypatch, {"dataset_info": {}})
     assert discovery.fetch_hf_schema("some/dataset") is None
+
+
+# ── fetch_hf_configs ────────────────────────────────────────────────────────
+
+
+def test_configs_returns_sorted_names(monkeypatch):
+    _patch_response(
+        monkeypatch,
+        {"dataset_info": {"zeta": {}, "alpha": {}, "mu": {}}},
+    )
+    assert discovery.fetch_hf_configs("some/dataset") == ["alpha", "mu", "zeta"]
+
+
+def test_configs_none_when_api_unavailable(monkeypatch):
+    _patch_response(monkeypatch, None)
+    assert discovery.fetch_hf_configs("some/dataset") is None
+
+
+def test_configs_none_when_empty(monkeypatch):
+    _patch_response(monkeypatch, {"dataset_info": {}})
+    assert discovery.fetch_hf_configs("some/dataset") is None

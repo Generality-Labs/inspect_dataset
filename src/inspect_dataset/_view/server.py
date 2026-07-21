@@ -151,6 +151,7 @@ async def _load_records_cached(ds: dict[str, Any]) -> list[dict[str, Any]] | Non
     dataset_name: str = summary.get("dataset_name", "")
     split: str = summary.get("split") or "train"
     revision: str | None = summary.get("revision")
+    config: str | None = summary.get("config")
 
     if not source_type or not dataset_name:
         return None
@@ -160,7 +161,7 @@ async def _load_records_cached(ds: dict[str, Any]) -> list[dict[str, Any]] | Non
             from inspect_dataset.loader import load_hf_dataset
 
             records = await asyncio.to_thread(
-                load_hf_dataset, dataset_name, split=split, revision=revision
+                load_hf_dataset, dataset_name, split=split, revision=revision, config=config
             )
         elif source_type == "inspect_task":
             from inspect_dataset.loader import load_task_from_spec
@@ -642,6 +643,7 @@ async def handle_explore_load(request: web.Request) -> web.Response:
             "source": source,
             "source_type": source_type,
             "split": split,
+            "config": config,
             "total": len(records),
             "columns": [s["name"] for s in schema],
         }
