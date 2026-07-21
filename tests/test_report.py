@@ -53,6 +53,22 @@ def test_summary_includes_revision():
     assert summary["revision"] == "abc123"
 
 
+def test_summary_includes_config():
+    run = _make_run(source_type="hf", config="dimensions")
+    with tempfile.TemporaryDirectory() as d:
+        save_findings(run, Path(d))
+        summary = json.loads((Path(d) / "scan_summary.json").read_text())
+    assert summary["config"] == "dimensions"
+
+
+def test_summary_config_defaults_to_none():
+    run = _make_run(source_type="hf")
+    with tempfile.TemporaryDirectory() as d:
+        save_findings(run, Path(d))
+        summary = json.loads((Path(d) / "scan_summary.json").read_text())
+    assert summary["config"] is None
+
+
 def test_summary_default_source_type():
     """ScanRun with no source_type keyword defaults to 'hf'."""
     run = ScanRun(

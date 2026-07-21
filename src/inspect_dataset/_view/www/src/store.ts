@@ -49,6 +49,7 @@ interface AppState {
     sourceType: "hf" | "inspect_task",
     split: string,
     limit?: number,
+    config?: string,
   ) => Promise<ExplorerSession | null>;
   clearExplorerSession: () => void;
 }
@@ -71,7 +72,7 @@ export const useStore = create<AppState>((set, get) => ({
 
   setSelectedFinding: (finding) => set({ selectedFinding: finding }),
 
-  startExplorerSession: async (source, sourceType, split, limit) => {
+  startExplorerSession: async (source, sourceType, split, limit, config) => {
     set({
       explorerLoading: true,
       explorerError: null,
@@ -84,6 +85,7 @@ export const useStore = create<AppState>((set, get) => ({
         sourceType,
         split,
         limit,
+        config,
       );
       const schema = await fetchExplorerSchema(session.session_id);
       set({

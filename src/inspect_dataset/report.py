@@ -96,6 +96,7 @@ def save_findings(
         "split": run.split,
         "source_type": run.source_type,
         "revision": run.revision,
+        "config": run.config,
         "files_root": files_root,
         "total_samples": run.total_samples,
         "total_findings": len(run.findings),

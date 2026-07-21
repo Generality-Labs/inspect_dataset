@@ -73,6 +73,7 @@ def run_scanners(
     split: str | None = None,
     source_type: str = "hf",
     revision: str | None = None,
+    config: str | None = None,
 ) -> ScanRun:
     """Run scanners synchronously. Raises if any LLM scanners are included."""
     llm = [s for s in scanners if isinstance(s, LLMScannerDef)]
@@ -96,6 +97,7 @@ def run_scanners(
         findings=all_findings,
         source_type=source_type,
         revision=revision,
+        config=config,
     )
 
 
@@ -107,6 +109,7 @@ async def run_scanners_async(
     split: str | None = None,
     source_type: str = "hf",
     revision: str | None = None,
+    config: str | None = None,
 ) -> ScanRun:
     """Run scanners, supporting both sync and async (LLM) scanners."""
     all_findings: list[Finding] = []
@@ -136,6 +139,7 @@ async def run_scanners_async(
         findings=all_findings,
         source_type=source_type,
         revision=revision,
+        config=config,
     )
 
 

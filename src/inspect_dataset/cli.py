@@ -78,6 +78,11 @@ def cli() -> None:
 @click.option("--split", default="train", show_default=True, help="Dataset split to load.")
 @click.option("--revision", default=None, help="Dataset revision / commit SHA to pin.")
 @click.option(
+    "--config",
+    default=None,
+    help="HF config/subset name (required for multi-config datasets, e.g. a specific subset).",
+)
+@click.option(
     "--question-field",
     default=None,
     help="Column name for questions (auto-detected if omitted).",
@@ -160,6 +165,7 @@ def scan(
     dataset: str,
     split: str,
     revision: str | None,
+    config: str | None,
     question_field: str | None,
     answer_field: str | None,
     id_field: str | None,
@@ -261,8 +267,11 @@ def scan(
         if question_field or answer_field or id_field:
             fields = resolve_fields(records, question_field, answer_field, id_field, image_field)
     else:
-        console.print(f"Loading [bold]{dataset}[/bold] split=[bold]{split}[/bold]...")
-        records = load_hf_dataset(dataset, split=split, revision=revision, limit=limit)
+        config_msg = f" config=[bold]{config}[/bold]" if config else ""
+        console.print(f"Loading [bold]{dataset}[/bold] split=[bold]{split}[/bold]{config_msg}...")
+        records = load_hf_dataset(
+            dataset, split=split, revision=revision, limit=limit, config=config
+        )
         fields = resolve_fields(records, question_field, answer_field, id_field, image_field)
 
     if files_root is not None:
@@ -295,6 +304,7 @@ def scan(
         )
 
     source_type = "local" if is_local else ("inspect_task" if is_task else "hf")
+    resolved_config = config if source_type == "hf" else None
 
     if llm_scanners:
         import asyncio
@@ -308,6 +318,7 @@ def scan(
                 split=resolved_split,
                 source_type=source_type,
                 revision=revision,
+                config=resolved_config,
             )
         )
     else:
@@ -319,6 +330,7 @@ def scan(
             split=resolved_split,
             source_type=source_type,
             revision=revision,
+            config=resolved_config,
         )
 
     print_report(run, console=console)

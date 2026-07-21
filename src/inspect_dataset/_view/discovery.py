@@ -105,16 +105,40 @@ def fetch_hf_schema(
         return None
 
     dataset_info: dict[str, Any] = data.get("dataset_info", {})
-    if not dataset_info:
+    if not isinstance(dataset_info, dict) or not dataset_info:
         return None
 
-    # Pick the first config (or the matching one)
-    for info in dataset_info.values():
+    # When a config is requested the API returns that config's info dict
+    # directly (with "features" at the top level); otherwise dataset_info is
+    # keyed by config name, e.g. {"default": {..., "features": {...}}}.
+    if isinstance(dataset_info.get("features"), dict):
+        return _parse_hf_features(dataset_info["features"])
+
+    # Prefer the requested config, then fall back to the first one with features.
+    ordered = []
+    if config and isinstance(dataset_info.get(config), dict):
+        ordered.append(dataset_info[config])
+    ordered.extend(v for v in dataset_info.values() if isinstance(v, dict))
+    for info in ordered:
         features = info.get("features", {})
         if features:
             return _parse_hf_features(features)
 
     return None
+
+
+def fetch_hf_configs(repo_id: str) -> list[str] | None:
+    """Return available config/subset names from the HF /info endpoint.
+
+    Returns None if the API is unavailable.
+    """
+    data = _hf_request(f"/info?dataset={repo_id}")
+    if data is None:
+        return None
+    dataset_info: dict[str, Any] = data.get("dataset_info", {})
+    if not dataset_info:
+        return None
+    return sorted(dataset_info.keys())
 
 
 def fetch_hf_splits(
@@ -172,19 +196,47 @@ def list_cached_hf_datasets() -> list[dict[str, Any]]:
                         found.add(split_name)
         return sorted(found) or ["train"]
 
+    def _configs_for_repo(repo: Any) -> list[str]:
+        """Return config/subset names for a single repo, using API then fallback.
+
+        Returns ``[]`` when a real config name can't be determined — callers
+        then load with no ``name`` kwarg, preserving pre-config behaviour for
+        single-config datasets (whose sole config may not be named "default").
+
+        Offline fallback: HF lays multi-config datasets out as
+        ``<config>/<split>-*.parquet``; single-config ones use a generic
+        ``data/`` directory rather than a real config name, so that (and any
+        directory holding no data files, e.g. ``images/``) is excluded.
+        """
+        api_configs = fetch_hf_configs(repo.repo_id)
+        if api_configs is not None:
+            return api_configs
+        data_exts = (".parquet", ".json", ".jsonl", ".csv", ".arrow")
+        found: set[str] = set()
+        for rev in repo.revisions:
+            for f in rev.files:
+                parts = f.file_path.relative_to(rev.snapshot_path).parts
+                if len(parts) > 1 and parts[0] != "data" and parts[-1].lower().endswith(data_exts):
+                    found.add(parts[0])
+        return sorted(found)
+
+    def _meta_for_repo(repo: Any) -> tuple[list[str], list[str]]:
+        return _splits_for_repo(repo), _configs_for_repo(repo)
+
     from concurrent.futures import ThreadPoolExecutor
 
     with ThreadPoolExecutor(max_workers=16) as pool:
-        splits_results = list(pool.map(_splits_for_repo, dataset_repos))
+        meta_results = list(pool.map(_meta_for_repo, dataset_repos))
 
     result = [
         {
             "repo_id": repo.repo_id,
             "size_on_disk": repo.size_on_disk,
             "splits": splits,
+            "configs": configs,
             "last_modified": repo.last_modified,
         }
-        for repo, splits in zip(dataset_repos, splits_results, strict=True)
+        for repo, (splits, configs) in zip(dataset_repos, meta_results, strict=True)
     ]
     return result
 
