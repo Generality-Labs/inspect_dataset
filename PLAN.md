@@ -526,6 +526,11 @@ Design principles:
 - [ ] `gold_completeness` — page regions not represented in gold at all
 - [ ] `reading_order` — gold block order matches visual reading order
 
+> **Handoff note (where we're up to).** The image plumbing (`judge_batch_vision`, `page_image`) and the first vision scanner (`gold_fidelity`) are done, tested against a mocked model, and merged into this line of work. Two things remain:
+>
+> 1. **A live end-to-end run is blocked on credentials, not code.** This is a Claude Code on the web (cloud) environment; nobody has interactive shell access, so a key can't be `export`ed or written to `.env` by hand. `ANTHROPIC_API_KEY` must be added as a **secret / environment variable in the environment's configuration** (web app → environment settings), which is injected at container start — so it only appears in a *new* session, not a running one. Once a fresh session has it (verify with `env | grep -c ANTHROPIC_API_KEY`, don't print the value), run the real vision pass against the benchmark's cached `page.png` images: `inspect-dataset scan <samples> --scanner-module <domain-module> --files-root <cache> --scanners gold_fidelity --model anthropic/claude-opus-4-8`. Model choice: Opus 4.8 (`claude-opus-4-8`) is the default fidelity judge — high-res vision to 2576px long edge matters for dense tables and small text; Sonnet 5 (`claude-sonnet-5`, same high-res vision) is the cost-efficient choice for scaling across many samples; **not** Haiku (no high-res vision).
+> 2. **`gold_completeness` and `reading_order` are not started.** Both ride the same `judge_batch_vision` path that's now in place, so each is a new scanner module + prompt + mocked-model test, following `gold_fidelity` as the template. Neither needs a key to build or unit-test.
+
 #### v0.6.3 — Viewer: side-by-side audit panel (in progress)
 
 - [x] Rendered-markdown field type in sample detail (react-markdown + remark-gfm; multi-line answers render as real tables/headings)
