@@ -85050,7 +85050,21 @@ function ResizablePanel({ width, onWidth, min = 280, max = 900, children }) {
 	});
 }
 ModuleRegistry.registerModules([AllCommunityModule]);
-function CellRenderer({ value }) {
+function NestedJson({ value }) {
+	const str = JSON.stringify(value) ?? "";
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+		className: "font-monospace small",
+		title: str.length > 1e3 ? `${str.slice(0, 1e3)}…` : str,
+		style: {
+			overflow: "hidden",
+			textOverflow: "ellipsis",
+			whiteSpace: "nowrap",
+			display: "block"
+		},
+		children: str
+	});
+}
+function CellRenderer({ value, expandNested }) {
 	if (value === null || value === void 0) return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
 		className: "fst-italic",
 		style: { opacity: .55 },
@@ -85072,6 +85086,7 @@ function CellRenderer({ value }) {
 			style: { opacity: .7 },
 			children: [String(obj.size), " bytes"]
 		});
+		if (expandNested) return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(NestedJson, { value });
 		return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
 			className: "font-monospace small",
 			title: JSON.stringify(value),
@@ -85086,15 +85101,18 @@ function CellRenderer({ value }) {
 			children: "{…}"
 		});
 	}
-	if (Array.isArray(value)) return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
-		className: "small",
-		style: { opacity: .7 },
-		children: [
-			"[",
-			value.length,
-			" items]"
-		]
-	});
+	if (Array.isArray(value)) {
+		if (expandNested) return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(NestedJson, { value });
+		return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+			className: "small",
+			style: { opacity: .7 },
+			children: [
+				"[",
+				value.length,
+				" items]"
+			]
+		});
+	}
 	const str = String(value);
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
 		title: str,
@@ -85534,6 +85552,8 @@ function ExplorerView() {
 	const [schemaWidth, setSchemaWidth] = (0, import_react.useState)(360);
 	const [recordWidth, setRecordWidth] = (0, import_react.useState)(440);
 	const [scannersWidth, setScannersWidth] = (0, import_react.useState)(360);
+	const [expandNested, setExpandNested] = (0, import_react.useState)(false);
+	const expandNestedRef = (0, import_react.useRef)(expandNested);
 	const gridApi = (0, import_react.useRef)(null);
 	const sid = sessionId ?? explorerSession?.session_id ?? null;
 	(0, import_react.useEffect)(() => {
@@ -85597,9 +85617,17 @@ function ExplorerView() {
 			filter: true,
 			resizable: true,
 			valueFormatter: () => "",
-			cellRenderer: (params) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(CellRenderer, { value: params.value })
+			cellRenderer: (params) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(CellRenderer, {
+				value: params.value,
+				expandNested: expandNestedRef.current
+			})
 		}))];
 	}, [columnNames.join("\0")]);
+	const toggleExpandNested = (0, import_react.useCallback)((on) => {
+		expandNestedRef.current = on;
+		setExpandNested(on);
+		gridApi.current?.refreshCells({ force: true });
+	}, []);
 	const toggleColumn = (0, import_react.useCallback)((name, visible) => {
 		gridApi.current?.setColumnsVisible([name], visible);
 		setHiddenColumns((prev) => {
@@ -85663,18 +85691,37 @@ function ExplorerView() {
 						]
 					}),
 					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-						className: "d-flex gap-2",
-						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
-							className: `btn btn-sm ${showSchema ? "btn-secondary" : "btn-outline-secondary"}`,
-							onClick: () => setShowSchema((v) => !v),
-							title: "Toggle schema panel",
-							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("i", { className: "bi bi-table me-1" }), "Schema"]
-						}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
-							className: `btn btn-sm ${showScanners ? "btn-secondary" : "btn-outline-secondary"}`,
-							onClick: () => setShowScanners((v) => !v),
-							title: "Toggle scanners panel",
-							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("i", { className: "bi bi-search me-1" }), "Scanners"]
-						})]
+						className: "d-flex gap-2 align-items-center",
+						children: [
+							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+								className: "form-check form-switch mb-0 me-1 small",
+								title: "Show list/object contents as JSON in cells",
+								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+									className: "form-check-input",
+									type: "checkbox",
+									role: "switch",
+									id: "expand-nested-switch",
+									checked: expandNested,
+									onChange: (e) => toggleExpandNested(e.target.checked)
+								}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("label", {
+									className: "form-check-label",
+									htmlFor: "expand-nested-switch",
+									children: "Expand nested"
+								})]
+							}),
+							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+								className: `btn btn-sm ${showSchema ? "btn-secondary" : "btn-outline-secondary"}`,
+								onClick: () => setShowSchema((v) => !v),
+								title: "Toggle schema panel",
+								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("i", { className: "bi bi-table me-1" }), "Schema"]
+							}),
+							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+								className: `btn btn-sm ${showScanners ? "btn-secondary" : "btn-outline-secondary"}`,
+								onClick: () => setShowScanners((v) => !v),
+								title: "Toggle scanners panel",
+								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("i", { className: "bi bi-search me-1" }), "Scanners"]
+							})
+						]
 					})
 				]
 			}),

@@ -91,7 +91,33 @@ ModuleRegistry.registerModules([AllCommunityModule]);
 
 // ── Cell renderers ─────────────────────────────────────────────────────────
 
-function CellRenderer({ value }: { value: CellValue }) {
+// Single-line JSON for expanded nested values; tooltip capped so a huge
+// cell can't produce a megabyte hover.
+function NestedJson({ value }: { value: CellValue }) {
+  const str = JSON.stringify(value) ?? "";
+  return (
+    <span
+      className="font-monospace small"
+      title={str.length > 1000 ? `${str.slice(0, 1000)}…` : str}
+      style={{
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        whiteSpace: "nowrap",
+        display: "block",
+      }}
+    >
+      {str}
+    </span>
+  );
+}
+
+function CellRenderer({
+  value,
+  expandNested,
+}: {
+  value: CellValue;
+  expandNested: boolean;
+}) {
   if (value === null || value === undefined) {
     return (
       <span className="fst-italic" style={{ opacity: 0.55 }}>
@@ -123,6 +149,7 @@ function CellRenderer({ value }: { value: CellValue }) {
         </span>
       );
     }
+    if (expandNested) return <NestedJson value={value} />;
     return (
       <span
         className="font-monospace small"
@@ -141,6 +168,7 @@ function CellRenderer({ value }: { value: CellValue }) {
     );
   }
   if (Array.isArray(value)) {
+    if (expandNested) return <NestedJson value={value} />;
     return (
       <span className="small" style={{ opacity: 0.7 }}>
         [{value.length} items]
@@ -643,6 +671,10 @@ export function ExplorerView() {
   const [schemaWidth, setSchemaWidth] = useState(360);
   const [recordWidth, setRecordWidth] = useState(440);
   const [scannersWidth, setScannersWidth] = useState(360);
+  const [expandNested, setExpandNested] = useState(false);
+  // Read by cell renderers via ref so colDefs stay referentially stable
+  // (invalidating them on toggle would reset manual column resizes).
+  const expandNestedRef = useRef(expandNested);
   const gridApi = useRef<GridApi | null>(null);
 
   const sid = sessionId ?? explorerSession?.session_id ?? null;
@@ -731,13 +763,23 @@ export function ExplorerView() {
         resizable: true,
         valueFormatter: () => "",
         cellRenderer: (params: ICellRendererParams<ExploreRow>) => (
-          <CellRenderer value={params.value as CellValue} />
+          <CellRenderer
+            value={params.value as CellValue}
+            expandNested={expandNestedRef.current}
+          />
         ),
       })),
     ];
     // columnKey captures the (ordered) column set; schema identity is stable.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [columnKey]);
+
+  const toggleExpandNested = useCallback((on: boolean) => {
+    expandNestedRef.current = on;
+    setExpandNested(on);
+    // Renderers read the ref, so force re-render of already-drawn cells.
+    gridApi.current?.refreshCells({ force: true });
+  }, []);
 
   const toggleColumn = useCallback((name: string, visible: boolean) => {
     gridApi.current?.setColumnsVisible([name], visible);
@@ -797,7 +839,23 @@ export function ExplorerView() {
             </span>
           </span>
         )}
-        <div className="d-flex gap-2">
+        <div className="d-flex gap-2 align-items-center">
+          <div
+            className="form-check form-switch mb-0 me-1 small"
+            title="Show list/object contents as JSON in cells"
+          >
+            <input
+              className="form-check-input"
+              type="checkbox"
+              role="switch"
+              id="expand-nested-switch"
+              checked={expandNested}
+              onChange={(e) => toggleExpandNested(e.target.checked)}
+            />
+            <label className="form-check-label" htmlFor="expand-nested-switch">
+              Expand nested
+            </label>
+          </div>
           <button
             className={`btn btn-sm ${showSchema ? "btn-secondary" : "btn-outline-secondary"}`}
             onClick={() => setShowSchema((v) => !v)}
