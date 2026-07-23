@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { AgGridReact } from "ag-grid-react";
 import {
@@ -20,6 +20,68 @@ import type {
   SchemaField,
   SchemaInfo,
 } from "../types";
+
+// Readable, theme-adaptive row selection color for the AG Grid checkbox
+// selection (the previous dark default made cell text unreadable).
+const gridTheme = themeQuartz.withParams({
+  selectedRowBackgroundColor: "rgba(13, 110, 253, 0.14)",
+});
+
+// ── Resizable side panel (drag handle on the left edge) ─────────────────────
+
+function ResizablePanel({
+  width,
+  onWidth,
+  min = 280,
+  max = 900,
+  children,
+}: {
+  width: number;
+  onWidth: (w: number) => void;
+  min?: number;
+  max?: number;
+  children: React.ReactNode;
+}) {
+  const dragging = useRef(false);
+
+  useEffect(() => {
+    const move = (e: MouseEvent) => {
+      if (!dragging.current) return;
+      const next = window.innerWidth - e.clientX;
+      onWidth(Math.min(max, Math.max(min, next)));
+    };
+    const up = () => {
+      if (!dragging.current) return;
+      dragging.current = false;
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
+    };
+    window.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", up);
+    return () => {
+      window.removeEventListener("mousemove", move);
+      window.removeEventListener("mouseup", up);
+    };
+  }, [onWidth, min, max]);
+
+  return (
+    <div className="d-flex" style={{ width, minWidth: width, height: "100%" }}>
+      <div
+        onMouseDown={() => {
+          dragging.current = true;
+          document.body.style.userSelect = "none";
+          document.body.style.cursor = "col-resize";
+        }}
+        title="Drag to resize"
+        style={{ width: 6, cursor: "col-resize", flexShrink: 0 }}
+        className="bg-body-secondary border-start"
+      />
+      <div className="flex-grow-1" style={{ minWidth: 0, height: "100%" }}>
+        {children}
+      </div>
+    </div>
+  );
+}
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
@@ -113,17 +175,26 @@ const TYPE_BADGE: Record<string, string> = {
 function SchemaPanel({
   schema,
   onClose,
+  hiddenColumns,
+  onToggleColumn,
 }: {
   schema: SchemaField[];
   onClose: () => void;
+  hiddenColumns: Set<string>;
+  onToggleColumn: (name: string, visible: boolean) => void;
 }) {
   return (
     <div
-      className="border-start d-flex flex-column bg-body"
-      style={{ width: 300, minWidth: 300, overflowY: "auto" }}
+      className="d-flex flex-column bg-body"
+      style={{ width: "100%", height: "100%", overflowY: "auto" }}
     >
       <div className="p-3 border-bottom d-flex justify-content-between align-items-center">
-        <h6 className="mb-0 fw-semibold">Schema</h6>
+        <div>
+          <h6 className="mb-0 fw-semibold">Schema</h6>
+          <span className="small text-body-secondary">
+            Tick a field to show its column
+          </span>
+        </div>
         <button
           className="btn btn-sm btn-close"
           onClick={onClose}
@@ -132,35 +203,42 @@ function SchemaPanel({
       </div>
       <div className="px-3 py-2">
         {schema.map((f) => (
-          <div key={f.name} className="mb-3">
-            <div className="d-flex justify-content-between align-items-center mb-1">
-              <span className="fw-semibold small text-truncate me-2">
-                {f.name}
-              </span>
-              <span
-                className={`badge small flex-shrink-0 ${TYPE_BADGE[f.type] ?? "bg-secondary"}`}
-              >
-                {f.type}
-              </span>
-            </div>
-            <div className="small text-body-secondary">
-              {f.null_count > 0 && (
-                <span className="me-2">
-                  {f.null_count} null (
-                  {Math.round((f.null_count / f.total) * 100)}%)
+          <div key={f.name} className="mb-3 d-flex align-items-start">
+            <input
+              type="checkbox"
+              className="form-check-input mt-1 me-2 flex-shrink-0"
+              checked={!hiddenColumns.has(f.name)}
+              onChange={(e) => onToggleColumn(f.name, e.target.checked)}
+              title={hiddenColumns.has(f.name) ? "Show column" : "Hide column"}
+            />
+            <div className="flex-grow-1" style={{ minWidth: 0 }}>
+              <div className="d-flex justify-content-between align-items-center mb-1">
+                <span className="fw-semibold small me-2">{f.name}</span>
+                <span
+                  className={`badge small flex-shrink-0 ${TYPE_BADGE[f.type] ?? "bg-secondary"}`}
+                >
+                  {f.type}
                 </span>
-              )}
-              {f.unique_count !== undefined && (
-                <span className="me-2">{f.unique_count} unique</span>
-              )}
-              {f.avg_length !== undefined && (
-                <span>avg {f.avg_length} chars</span>
-              )}
-              {f.mean !== undefined && (
-                <span>
-                  {f.min}–{f.max} (mean {f.mean})
-                </span>
-              )}
+              </div>
+              <div className="small text-body-secondary">
+                {f.null_count > 0 && (
+                  <span className="me-2">
+                    {f.null_count} null (
+                    {Math.round((f.null_count / f.total) * 100)}%)
+                  </span>
+                )}
+                {f.unique_count !== undefined && (
+                  <span className="me-2">{f.unique_count} unique</span>
+                )}
+                {f.avg_length !== undefined && (
+                  <span>avg {f.avg_length} chars</span>
+                )}
+                {f.mean !== undefined && (
+                  <span>
+                    {f.min}–{f.max} (mean {f.mean})
+                  </span>
+                )}
+              </div>
             </div>
           </div>
         ))}
@@ -212,8 +290,8 @@ function RecordDetailPanel({
 
   return (
     <div
-      className="border-start d-flex flex-column bg-body"
-      style={{ width: 360, minWidth: 360, overflowY: "auto" }}
+      className="d-flex flex-column bg-body"
+      style={{ width: "100%", height: "100%", overflowY: "auto" }}
     >
       <div className="p-3 border-bottom d-flex justify-content-between align-items-center">
         <h6 className="mb-0 fw-semibold">Record #{idx}</h6>
@@ -361,6 +439,9 @@ export function ExplorerView() {
   const [selectedIdx, setSelectedIdx] = useState<number | null>(null);
   const [offset, setOffset] = useState(0);
   const [localSchema, setLocalSchema] = useState<SchemaInfo | null>(null);
+  const [hiddenColumns, setHiddenColumns] = useState<Set<string>>(new Set());
+  const [schemaWidth, setSchemaWidth] = useState(360);
+  const [recordWidth, setRecordWidth] = useState(440);
   const gridApi = useRef<GridApi | null>(null);
 
   const sid = sessionId ?? explorerSession?.session_id ?? null;
@@ -385,7 +466,6 @@ export function ExplorerView() {
   // result — they're reset here deliberately when the session changes.
   useEffect(() => {
     if (!sid) return;
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoadingRows(true);
     setRowError(null);
     fetchExplorerRecords(sid, 0, PAGE_SIZE)
@@ -422,31 +502,51 @@ export function ExplorerView() {
       ? schema.filter((f) => !f.name.startsWith("__")).map((f) => f.name)
       : (session?.columns ?? []).filter((c) => !c.startsWith("__"));
 
-  const colDefs: ColDef<ExploreRow>[] = [
-    {
-      headerName: "#",
-      field: "__index",
-      width: 65,
-      pinned: "left" as const,
-      sort: "asc" as const,
-      sortable: true,
-    },
-    ...columnNames.map((name) => {
-      const schemaField = schema.find((f) => f.name === name);
-      return {
+  const columnKey = columnNames.join("\u0000");
+
+  // Size each column to at least fit its header text (rather than squeezing
+  // everything into the viewport with flex), so wide datasets scroll
+  // horizontally and headers stay legible. Memoised so user resizes and
+  // visibility toggles (applied imperatively) aren't reset on every render.
+  const colDefs: ColDef<ExploreRow>[] = useMemo(() => {
+    const headerWidth = (name: string) =>
+      Math.min(560, Math.max(120, name.length * 8.5 + 56));
+    return [
+      {
+        headerName: "#",
+        field: "__index",
+        width: 72,
+        pinned: "left" as const,
+        sort: "asc" as const,
+        sortable: true,
+      },
+      ...columnNames.map((name) => ({
         headerName: name,
         field: name as keyof ExploreRow & string,
-        flex: schemaField?.type === "str" ? 2 : 1,
+        width: headerWidth(name),
         minWidth: 80,
         sortable: true,
         filter: true,
+        resizable: true,
         valueFormatter: () => "",
         cellRenderer: (params: ICellRendererParams<ExploreRow>) => (
           <CellRenderer value={params.value as CellValue} />
         ),
-      };
-    }),
-  ];
+      })),
+    ];
+    // columnKey captures the (ordered) column set; schema identity is stable.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [columnKey]);
+
+  const toggleColumn = useCallback((name: string, visible: boolean) => {
+    gridApi.current?.setColumnsVisible([name], visible);
+    setHiddenColumns((prev) => {
+      const next = new Set(prev);
+      if (visible) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+  }, []);
 
   const handleClose = () => {
     clearSession();
@@ -524,7 +624,7 @@ export function ExplorerView() {
             <>
               <div style={{ flex: 1, minHeight: 0 }}>
                 <AgGridReact<ExploreRow>
-                  theme={themeQuartz}
+                  theme={gridTheme}
                   rowData={rows}
                   columnDefs={colDefs}
                   onGridReady={(p) => {
@@ -540,7 +640,10 @@ export function ExplorerView() {
                   }}
                   getRowStyle={(p) =>
                     p.data?.__index === selectedIdx
-                      ? { background: "var(--bs-primary-bg-subtle)" }
+                      ? {
+                          background: "var(--bs-primary-bg-subtle)",
+                          color: "var(--bs-primary-text-emphasis)",
+                        }
                       : undefined
                   }
                 />
@@ -573,24 +676,33 @@ export function ExplorerView() {
 
         {/* Schema panel */}
         {showSchema && schema.length > 0 && (
-          <SchemaPanel schema={schema} onClose={() => setShowSchema(false)} />
+          <ResizablePanel width={schemaWidth} onWidth={setSchemaWidth}>
+            <SchemaPanel
+              schema={schema}
+              onClose={() => setShowSchema(false)}
+              hiddenColumns={hiddenColumns}
+              onToggleColumn={toggleColumn}
+            />
+          </ResizablePanel>
         )}
 
         {/* Record detail panel */}
         {selectedIdx !== null && sid && (
-          <RecordDetailPanel
-            sessionId={sid}
-            idx={selectedIdx}
-            onClose={() => setSelectedIdx(null)}
-            onPrev={() =>
-              setSelectedIdx((i) => (i !== null && i > 0 ? i - 1 : i))
-            }
-            onNext={() =>
-              setSelectedIdx((i) => (i !== null && i < total - 1 ? i + 1 : i))
-            }
-            hasPrev={selectedIdx > 0}
-            hasNext={selectedIdx < total - 1}
-          />
+          <ResizablePanel width={recordWidth} onWidth={setRecordWidth}>
+            <RecordDetailPanel
+              sessionId={sid}
+              idx={selectedIdx}
+              onClose={() => setSelectedIdx(null)}
+              onPrev={() =>
+                setSelectedIdx((i) => (i !== null && i > 0 ? i - 1 : i))
+              }
+              onNext={() =>
+                setSelectedIdx((i) => (i !== null && i < total - 1 ? i + 1 : i))
+              }
+              hasPrev={selectedIdx > 0}
+              hasNext={selectedIdx < total - 1}
+            />
+          </ResizablePanel>
         )}
       </div>
     </div>
