@@ -92,6 +92,7 @@ asyncio_mode = "auto"
 dev = [
     "inspect-evals>=0.3.103",
     "playwright>=1.40",
+    "pre-commit>=4.0",
     "pytest>=9.0",
     "pytest-asyncio>=0.23",
     "pytest-playwright>=0.5",
