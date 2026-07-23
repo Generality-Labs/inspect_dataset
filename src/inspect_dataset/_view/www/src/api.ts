@@ -8,6 +8,8 @@ import type {
   RecordsPage,
   Sample,
   SampleDetail,
+  ScannerInfo,
+  ScanResult,
   SchemaInfo,
   Summary,
   TriageStatus,
@@ -156,4 +158,30 @@ export async function fetchExplorerRecord(
   } catch {
     return null;
   }
+}
+
+export async function fetchScanners(): Promise<ScannerInfo[]> {
+  const res = await fetch(`${BASE}/scanners`);
+  if (!res.ok) return [];
+  return res.json();
+}
+
+export async function runExplorerScan(
+  sessionId: string,
+  scanners?: string[],
+  model?: string,
+): Promise<ScanResult> {
+  const res = await fetch(`${BASE}/explore/${sessionId}/scan`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      scanners: scanners && scanners.length > 0 ? scanners : null,
+      model: model || null,
+    }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error ?? `Scan failed: ${res.status}`);
+  }
+  return res.json();
 }

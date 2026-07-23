@@ -12,11 +12,15 @@ import {
   fetchExplorerRecord,
   fetchExplorerRecords,
   fetchExplorerSchema,
+  fetchScanners,
+  runExplorerScan,
 } from "../api";
 import type {
   CellValue,
+  ExploreFinding,
   ExploreRecordDetail,
   ExploreRow,
+  ScannerInfo,
   SchemaField,
   SchemaInfo,
 } from "../types";
@@ -420,6 +424,201 @@ function FieldValue({ value }: { value: CellValue }) {
   return <span style={{ whiteSpace: "pre-wrap" }}>{str}</span>;
 }
 
+// ── Scanners panel ──────────────────────────────────────────────────────────
+
+const SEVERITY_BADGE: Record<string, string> = {
+  high: "bg-danger",
+  medium: "bg-warning text-dark",
+  low: "bg-secondary",
+};
+
+function ScannersPanel({
+  sessionId,
+  onClose,
+  onJumpToRow,
+}: {
+  sessionId: string;
+  onClose: () => void;
+  onJumpToRow: (idx: number) => void;
+}) {
+  const [scanners, setScanners] = useState<ScannerInfo[]>([]);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [model, setModel] = useState("");
+  const [running, setRunning] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [findings, setFindings] = useState<ExploreFinding[] | null>(null);
+
+  useEffect(() => {
+    fetchScanners().then((list) => {
+      setScanners(list);
+      // Default: select all static scanners.
+      setSelected(
+        new Set(list.filter((s) => s.kind === "static").map((s) => s.name)),
+      );
+    });
+  }, []);
+
+  const toggle = (name: string) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+
+  const run = async () => {
+    setRunning(true);
+    setError(null);
+    try {
+      const result = await runExplorerScan(
+        sessionId,
+        [...selected],
+        model.trim() || undefined,
+      );
+      setFindings(result.findings);
+    } catch (e) {
+      setError(String(e instanceof Error ? e.message : e));
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  const bySeverity = { high: 0, medium: 0, low: 0 };
+  for (const f of findings ?? [])
+    bySeverity[f.severity] = (bySeverity[f.severity] ?? 0) + 1;
+
+  const needsModel = [...selected].some(
+    (n) => scanners.find((s) => s.name === n)?.kind === "llm",
+  );
+
+  return (
+    <div
+      className="d-flex flex-column bg-body"
+      style={{ width: "100%", height: "100%", overflowY: "auto" }}
+    >
+      <div className="p-3 border-bottom d-flex justify-content-between align-items-center">
+        <h6 className="mb-0 fw-semibold">Scanners</h6>
+        <button
+          className="btn btn-sm btn-close"
+          onClick={onClose}
+          aria-label="Close scanners panel"
+        />
+      </div>
+
+      <div className="px-3 py-2 border-bottom">
+        {scanners.map((s) => (
+          <div key={s.name} className="form-check mb-1" title={s.description}>
+            <input
+              type="checkbox"
+              className="form-check-input"
+              id={`scanner-${s.name}`}
+              checked={selected.has(s.name)}
+              onChange={() => toggle(s.name)}
+            />
+            <label
+              className="form-check-label small"
+              htmlFor={`scanner-${s.name}`}
+            >
+              {s.name}
+              {s.kind === "llm" && (
+                <span className="badge bg-info text-dark ms-1">LLM</span>
+              )}
+            </label>
+          </div>
+        ))}
+
+        {needsModel && (
+          <input
+            type="text"
+            className="form-control form-control-sm mt-2"
+            placeholder="model (e.g. openai/gpt-4o-mini)"
+            value={model}
+            onChange={(e) => setModel(e.target.value)}
+          />
+        )}
+
+        <button
+          className="btn btn-sm btn-primary w-100 mt-2"
+          onClick={run}
+          disabled={running || selected.size === 0}
+        >
+          {running ? (
+            <>
+              <span className="spinner-border spinner-border-sm me-1" />
+              Running…
+            </>
+          ) : (
+            <>
+              <i className="bi bi-play-fill me-1" />
+              Run {selected.size} scanner{selected.size === 1 ? "" : "s"}
+            </>
+          )}
+        </button>
+      </div>
+
+      {error && (
+        <div className="alert alert-danger m-2 small mb-0">{error}</div>
+      )}
+
+      {findings !== null && !error && (
+        <div className="flex-grow-1" style={{ overflowY: "auto" }}>
+          <div className="px-3 py-2 border-bottom small text-body-secondary d-flex gap-2 align-items-center">
+            <span className="fw-semibold text-body">
+              {findings.length} finding{findings.length === 1 ? "" : "s"}
+            </span>
+            {bySeverity.high > 0 && (
+              <span className="badge bg-danger">{bySeverity.high} high</span>
+            )}
+            {bySeverity.medium > 0 && (
+              <span className="badge bg-warning text-dark">
+                {bySeverity.medium} medium
+              </span>
+            )}
+            {bySeverity.low > 0 && (
+              <span className="badge bg-secondary">{bySeverity.low} low</span>
+            )}
+          </div>
+          {findings.length === 0 ? (
+            <div className="p-3 text-body-secondary small">
+              No issues found.
+            </div>
+          ) : (
+            <ul className="list-group list-group-flush">
+              {findings.map((f) => (
+                <li key={f.id} className="list-group-item py-2">
+                  <button
+                    className="btn btn-link btn-sm p-0 text-start w-100"
+                    onClick={() => onJumpToRow(f.sample_index)}
+                    title="Jump to this record"
+                  >
+                    <div className="d-flex justify-content-between align-items-center mb-1">
+                      <span className="fw-semibold small text-body">
+                        {f.scanner}
+                      </span>
+                      <span
+                        className={`badge small ${SEVERITY_BADGE[f.severity] ?? "bg-secondary"}`}
+                      >
+                        {f.severity}
+                      </span>
+                    </div>
+                    <div
+                      className="small text-body-secondary"
+                      style={{ whiteSpace: "normal" }}
+                    >
+                      <span className="text-body">#{f.sample_index}</span>{" "}
+                      {f.explanation}
+                    </div>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main explorer view ──────────────────────────────────────────────────────
 
 const PAGE_SIZE = 200;
@@ -436,12 +635,14 @@ export function ExplorerView() {
   const [loadingRows, setLoadingRows] = useState(false);
   const [rowError, setRowError] = useState<string | null>(null);
   const [showSchema, setShowSchema] = useState(false);
+  const [showScanners, setShowScanners] = useState(false);
   const [selectedIdx, setSelectedIdx] = useState<number | null>(null);
   const [offset, setOffset] = useState(0);
   const [localSchema, setLocalSchema] = useState<SchemaInfo | null>(null);
   const [hiddenColumns, setHiddenColumns] = useState<Set<string>>(new Set());
   const [schemaWidth, setSchemaWidth] = useState(360);
   const [recordWidth, setRecordWidth] = useState(440);
+  const [scannersWidth, setScannersWidth] = useState(360);
   const gridApi = useRef<GridApi | null>(null);
 
   const sid = sessionId ?? explorerSession?.session_id ?? null;
@@ -548,6 +749,11 @@ export function ExplorerView() {
     });
   }, []);
 
+  const jumpToRow = useCallback((idx: number) => {
+    setSelectedIdx(idx);
+    gridApi.current?.ensureIndexVisible(idx, "middle");
+  }, []);
+
   const handleClose = () => {
     clearSession();
     navigate("/");
@@ -599,6 +805,14 @@ export function ExplorerView() {
           >
             <i className="bi bi-table me-1" />
             Schema
+          </button>
+          <button
+            className={`btn btn-sm ${showScanners ? "btn-secondary" : "btn-outline-secondary"}`}
+            onClick={() => setShowScanners((v) => !v)}
+            title="Toggle scanners panel"
+          >
+            <i className="bi bi-search me-1" />
+            Scanners
           </button>
         </div>
       </nav>
@@ -682,6 +896,17 @@ export function ExplorerView() {
               onClose={() => setShowSchema(false)}
               hiddenColumns={hiddenColumns}
               onToggleColumn={toggleColumn}
+            />
+          </ResizablePanel>
+        )}
+
+        {/* Scanners panel */}
+        {showScanners && (
+          <ResizablePanel width={scannersWidth} onWidth={setScannersWidth}>
+            <ScannersPanel
+              sessionId={sid}
+              onClose={() => setShowScanners(false)}
+              onJumpToRow={jumpToRow}
             />
           </ResizablePanel>
         )}

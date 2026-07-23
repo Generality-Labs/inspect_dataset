@@ -12073,6 +12073,26 @@ async function fetchExplorerRecord(sessionId, idx) {
 		return null;
 	}
 }
+async function fetchScanners() {
+	const res = await fetch(`${BASE}/scanners`);
+	if (!res.ok) return [];
+	return res.json();
+}
+async function runExplorerScan(sessionId, scanners, model) {
+	const res = await fetch(`${BASE}/explore/${sessionId}/scan`, {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({
+			scanners: scanners && scanners.length > 0 ? scanners : null,
+			model: model || null
+		})
+	});
+	if (!res.ok) {
+		const body = await res.json().catch(() => ({}));
+		throw new Error(body.error ?? `Scan failed: ${res.status}`);
+	}
+	return res.json();
+}
 //#endregion
 //#region src/store.ts
 var useStore = create$1((set, get) => ({
@@ -12493,7 +12513,7 @@ function ScannerSidebar() {
 }
 //#endregion
 //#region src/components/FindingsList.tsx
-var SEVERITY_BADGE = {
+var SEVERITY_BADGE$1 = {
 	high: "bg-danger",
 	medium: "bg-warning text-dark",
 	low: "bg-secondary"
@@ -12535,7 +12555,7 @@ function FindingRow({ finding, selected, onClick }) {
 		children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 			className: "d-flex align-items-start gap-2",
 			children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-				className: clsx("badge mt-1", SEVERITY_BADGE[finding.severity]),
+				className: clsx("badge mt-1", SEVERITY_BADGE$1[finding.severity]),
 				children: finding.severity.toUpperCase()
 			}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 				className: "flex-grow-1 min-width-0",
@@ -85273,6 +85293,179 @@ function FieldValue({ value }) {
 		children: str
 	});
 }
+var SEVERITY_BADGE = {
+	high: "bg-danger",
+	medium: "bg-warning text-dark",
+	low: "bg-secondary"
+};
+function ScannersPanel({ sessionId, onClose, onJumpToRow }) {
+	const [scanners, setScanners] = (0, import_react.useState)([]);
+	const [selected, setSelected] = (0, import_react.useState)(/* @__PURE__ */ new Set());
+	const [model, setModel] = (0, import_react.useState)("");
+	const [running, setRunning] = (0, import_react.useState)(false);
+	const [error, setError] = (0, import_react.useState)(null);
+	const [findings, setFindings] = (0, import_react.useState)(null);
+	(0, import_react.useEffect)(() => {
+		fetchScanners().then((list) => {
+			setScanners(list);
+			setSelected(new Set(list.filter((s) => s.kind === "static").map((s) => s.name)));
+		});
+	}, []);
+	const toggle = (name) => setSelected((prev) => {
+		const next = new Set(prev);
+		if (next.has(name)) next.delete(name);
+		else next.add(name);
+		return next;
+	});
+	const run = async () => {
+		setRunning(true);
+		setError(null);
+		try {
+			setFindings((await runExplorerScan(sessionId, [...selected], model.trim() || void 0)).findings);
+		} catch (e) {
+			setError(String(e instanceof Error ? e.message : e));
+		} finally {
+			setRunning(false);
+		}
+	};
+	const bySeverity = {
+		high: 0,
+		medium: 0,
+		low: 0
+	};
+	for (const f of findings ?? []) bySeverity[f.severity] = (bySeverity[f.severity] ?? 0) + 1;
+	const needsModel = [...selected].some((n) => scanners.find((s) => s.name === n)?.kind === "llm");
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+		className: "d-flex flex-column bg-body",
+		style: {
+			width: "100%",
+			height: "100%",
+			overflowY: "auto"
+		},
+		children: [
+			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+				className: "p-3 border-bottom d-flex justify-content-between align-items-center",
+				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("h6", {
+					className: "mb-0 fw-semibold",
+					children: "Scanners"
+				}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+					className: "btn btn-sm btn-close",
+					onClick: onClose,
+					"aria-label": "Close scanners panel"
+				})]
+			}),
+			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+				className: "px-3 py-2 border-bottom",
+				children: [
+					scanners.map((s) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+						className: "form-check mb-1",
+						title: s.description,
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+							type: "checkbox",
+							className: "form-check-input",
+							id: `scanner-${s.name}`,
+							checked: selected.has(s.name),
+							onChange: () => toggle(s.name)
+						}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("label", {
+							className: "form-check-label small",
+							htmlFor: `scanner-${s.name}`,
+							children: [s.name, s.kind === "llm" && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+								className: "badge bg-info text-dark ms-1",
+								children: "LLM"
+							})]
+						})]
+					}, s.name)),
+					needsModel && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+						type: "text",
+						className: "form-control form-control-sm mt-2",
+						placeholder: "model (e.g. openai/gpt-4o-mini)",
+						value: model,
+						onChange: (e) => setModel(e.target.value)
+					}),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+						className: "btn btn-sm btn-primary w-100 mt-2",
+						onClick: run,
+						disabled: running || selected.size === 0,
+						children: running ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "spinner-border spinner-border-sm me-1" }), "Running…"] }) : /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
+							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("i", { className: "bi bi-play-fill me-1" }),
+							"Run ",
+							selected.size,
+							" scanner",
+							selected.size === 1 ? "" : "s"
+						] })
+					})
+				]
+			}),
+			error && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+				className: "alert alert-danger m-2 small mb-0",
+				children: error
+			}),
+			findings !== null && !error && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+				className: "flex-grow-1",
+				style: { overflowY: "auto" },
+				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+					className: "px-3 py-2 border-bottom small text-body-secondary d-flex gap-2 align-items-center",
+					children: [
+						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+							className: "fw-semibold text-body",
+							children: [
+								findings.length,
+								" finding",
+								findings.length === 1 ? "" : "s"
+							]
+						}),
+						bySeverity.high > 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+							className: "badge bg-danger",
+							children: [bySeverity.high, " high"]
+						}),
+						bySeverity.medium > 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+							className: "badge bg-warning text-dark",
+							children: [bySeverity.medium, " medium"]
+						}),
+						bySeverity.low > 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+							className: "badge bg-secondary",
+							children: [bySeverity.low, " low"]
+						})
+					]
+				}), findings.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+					className: "p-3 text-body-secondary small",
+					children: "No issues found."
+				}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)("ul", {
+					className: "list-group list-group-flush",
+					children: findings.map((f) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("li", {
+						className: "list-group-item py-2",
+						children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+							className: "btn btn-link btn-sm p-0 text-start w-100",
+							onClick: () => onJumpToRow(f.sample_index),
+							title: "Jump to this record",
+							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+								className: "d-flex justify-content-between align-items-center mb-1",
+								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+									className: "fw-semibold small text-body",
+									children: f.scanner
+								}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+									className: `badge small ${SEVERITY_BADGE[f.severity] ?? "bg-secondary"}`,
+									children: f.severity
+								})]
+							}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+								className: "small text-body-secondary",
+								style: { whiteSpace: "normal" },
+								children: [
+									/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+										className: "text-body",
+										children: ["#", f.sample_index]
+									}),
+									" ",
+									f.explanation
+								]
+							})]
+						})
+					}, f.id))
+				})]
+			})
+		]
+	});
+}
 var PAGE_SIZE = 200;
 function ExplorerView() {
 	const { sessionId } = useParams();
@@ -85285,12 +85478,14 @@ function ExplorerView() {
 	const [loadingRows, setLoadingRows] = (0, import_react.useState)(false);
 	const [rowError, setRowError] = (0, import_react.useState)(null);
 	const [showSchema, setShowSchema] = (0, import_react.useState)(false);
+	const [showScanners, setShowScanners] = (0, import_react.useState)(false);
 	const [selectedIdx, setSelectedIdx] = (0, import_react.useState)(null);
 	const [offset, setOffset] = (0, import_react.useState)(0);
 	const [localSchema, setLocalSchema] = (0, import_react.useState)(null);
 	const [hiddenColumns, setHiddenColumns] = (0, import_react.useState)(/* @__PURE__ */ new Set());
 	const [schemaWidth, setSchemaWidth] = (0, import_react.useState)(360);
 	const [recordWidth, setRecordWidth] = (0, import_react.useState)(440);
+	const [scannersWidth, setScannersWidth] = (0, import_react.useState)(360);
 	const gridApi = (0, import_react.useRef)(null);
 	const sid = sessionId ?? explorerSession?.session_id ?? null;
 	(0, import_react.useEffect)(() => {
@@ -85366,6 +85561,10 @@ function ExplorerView() {
 			return next;
 		});
 	}, []);
+	const jumpToRow = (0, import_react.useCallback)((idx) => {
+		setSelectedIdx(idx);
+		gridApi.current?.ensureIndexVisible(idx, "middle");
+	}, []);
 	const handleClose = () => {
 		clearSession();
 		navigate("/");
@@ -85415,14 +85614,19 @@ function ExplorerView() {
 							})
 						]
 					}),
-					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 						className: "d-flex gap-2",
-						children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
 							className: `btn btn-sm ${showSchema ? "btn-secondary" : "btn-outline-secondary"}`,
 							onClick: () => setShowSchema((v) => !v),
 							title: "Toggle schema panel",
 							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("i", { className: "bi bi-table me-1" }), "Schema"]
-						})
+						}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+							className: `btn btn-sm ${showScanners ? "btn-secondary" : "btn-outline-secondary"}`,
+							onClick: () => setShowScanners((v) => !v),
+							title: "Toggle scanners panel",
+							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("i", { className: "bi bi-search me-1" }), "Scanners"]
+						})]
 					})
 				]
 			}),
@@ -85499,6 +85703,15 @@ function ExplorerView() {
 							onClose: () => setShowSchema(false),
 							hiddenColumns,
 							onToggleColumn: toggleColumn
+						})
+					}),
+					showScanners && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ResizablePanel, {
+						width: scannersWidth,
+						onWidth: setScannersWidth,
+						children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ScannersPanel, {
+							sessionId: sid,
+							onClose: () => setShowScanners(false),
+							onJumpToRow: jumpToRow
 						})
 					}),
 					selectedIdx !== null && sid && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ResizablePanel, {
