@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useStore } from "../store";
 import {
-  fetchCachedDatasets,
+  fetchCachedDatasetMeta,
+  fetchCachedDatasetsBasic,
   fetchDatasets,
   fetchHfSchema,
   fetchInstalledTasks,
@@ -385,7 +386,9 @@ function CachedDatasetsList({
             </thead>
             <tbody>
               {filtered.map((ds) => {
-                // Tolerate older backends that don't return these fields.
+                // splits/configs are absent until the per-dataset meta
+                // fetch resolves (the basic listing is scan-only).
+                const metaPending = ds.splits === undefined;
                 const splits = ds.splits ?? [];
                 const configs = ds.configs ?? [];
                 const split =
@@ -414,7 +417,14 @@ function CachedDatasetsList({
                       {formatBytes(ds.size_on_disk)}
                     </td>
                     <td>
-                      {configs.length > 1 ? (
+                      {metaPending ? (
+                        <span
+                          className="spinner-border spinner-border-sm text-body-tertiary"
+                          role="status"
+                          aria-label="Loading configs"
+                          style={{ width: 12, height: 12, borderWidth: 1 }}
+                        />
+                      ) : configs.length > 1 ? (
                         <select
                           className="form-select form-select-sm py-0"
                           style={{ fontSize: "0.8rem" }}
@@ -439,7 +449,14 @@ function CachedDatasetsList({
                       )}
                     </td>
                     <td>
-                      {splits.length > 1 ? (
+                      {metaPending ? (
+                        <span
+                          className="spinner-border spinner-border-sm text-body-tertiary"
+                          role="status"
+                          aria-label="Loading splits"
+                          style={{ width: 12, height: 12, borderWidth: 1 }}
+                        />
+                      ) : splits.length > 1 ? (
                         <select
                           className="form-select form-select-sm py-0"
                           style={{ fontSize: "0.8rem" }}
@@ -620,17 +637,41 @@ export function ExplorerHome() {
   const navigate = useNavigate();
 
   useEffect(() => {
+    let cancelled = false;
     fetchDatasets()
       .then((ds) => setLocalFindings(ds))
       .catch(() => setLocalFindings([]));
-    fetchCachedDatasets().then((ds) => {
+    // Fast local cache scan first, so the list renders immediately; then
+    // fill in splits/configs per dataset (server memoises per snapshot).
+    fetchCachedDatasetsBasic().then((ds) => {
+      if (cancelled) return;
       setCachedDatasets(ds);
       setCachedLoading(false);
+
+      const queue = ds.map((d) => d.repo_id);
+      const fillNext = async (): Promise<void> => {
+        for (;;) {
+          const repoId = queue.shift();
+          if (repoId === undefined || cancelled) return;
+          const meta = await fetchCachedDatasetMeta(repoId);
+          if (cancelled) return;
+          // On failure fall back to defaults rather than a spinner forever.
+          const resolved = meta ?? { splits: ["train"], configs: [] };
+          setCachedDatasets((prev) =>
+            prev.map((d) => (d.repo_id === repoId ? { ...d, ...resolved } : d)),
+          );
+        }
+      };
+      const workers = Math.min(6, queue.length);
+      for (let i = 0; i < workers; i++) void fillNext();
     });
     fetchInstalledTasks().then((ts) => {
       setInstalledTasks(ts);
       setTasksLoading(false);
     });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const handleLoad = async (

@@ -10,9 +10,15 @@ export interface DatasetInfo {
 export interface CachedDataset {
   repo_id: string;
   size_on_disk: number;
+  // Absent until the per-dataset meta fetch resolves (cached-basic listing).
+  splits?: string[];
+  configs?: string[];
+  last_modified: number;
+}
+
+export interface CachedDatasetMeta {
   splits: string[];
   configs: string[];
-  last_modified: number;
 }
 
 export interface InstalledTask {
@@ -106,6 +112,30 @@ export interface Sample {
 }
 
 export type TriageStatus = "pending" | "confirmed" | "dismissed";
+
+export interface ScannerInfo {
+  name: string;
+  description: string;
+  kind: "static" | "llm";
+}
+
+export interface ExploreFinding {
+  id: number;
+  scanner: string;
+  severity: "high" | "medium" | "low";
+  category: string;
+  explanation: string;
+  sample_index: number;
+  sample_id: string | number | null;
+  line?: number | null;
+  metadata: Record<string, unknown>;
+}
+
+export interface ScanResult {
+  session_id: string;
+  total_findings: number;
+  findings: ExploreFinding[];
+}
 
 export interface SampleImage {
   field: string;

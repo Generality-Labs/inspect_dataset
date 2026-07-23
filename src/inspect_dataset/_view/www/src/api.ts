@@ -1,5 +1,6 @@
 import type {
   CachedDataset,
+  CachedDatasetMeta,
   DatasetInfo,
   ExploreRecordDetail,
   ExplorerSession,
@@ -8,6 +9,8 @@ import type {
   RecordsPage,
   Sample,
   SampleDetail,
+  ScannerInfo,
+  ScanResult,
   SchemaInfo,
   Summary,
   TriageStatus,
@@ -94,6 +97,22 @@ export async function fetchCachedDatasets(): Promise<CachedDataset[]> {
   return res.json();
 }
 
+export async function fetchCachedDatasetsBasic(): Promise<CachedDataset[]> {
+  const res = await fetch(`${BASE}/discover/cached-basic`);
+  if (!res.ok) return [];
+  return res.json();
+}
+
+export async function fetchCachedDatasetMeta(
+  repoId: string,
+): Promise<CachedDatasetMeta | null> {
+  const res = await fetch(
+    `${BASE}/discover/cached-meta?dataset=${encodeURIComponent(repoId)}`,
+  );
+  if (!res.ok) return null;
+  return res.json();
+}
+
 export async function fetchInstalledTasks(): Promise<InstalledTask[]> {
   const res = await fetch(`${BASE}/discover/tasks`);
   if (!res.ok) return [];
@@ -156,4 +175,30 @@ export async function fetchExplorerRecord(
   } catch {
     return null;
   }
+}
+
+export async function fetchScanners(): Promise<ScannerInfo[]> {
+  const res = await fetch(`${BASE}/scanners`);
+  if (!res.ok) return [];
+  return res.json();
+}
+
+export async function runExplorerScan(
+  sessionId: string,
+  scanners?: string[],
+  model?: string,
+): Promise<ScanResult> {
+  const res = await fetch(`${BASE}/explore/${sessionId}/scan`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      scanners: scanners && scanners.length > 0 ? scanners : null,
+      model: model || null,
+    }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error ?? `Scan failed: ${res.status}`);
+  }
+  return res.json();
 }
