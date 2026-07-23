@@ -323,6 +323,10 @@ def create_app(
     app.router.add_get("/api/discover/tasks", handle_discover_tasks)
     app.router.add_get("/api/discover/hf-schema", handle_discover_hf_schema)
 
+    # Scanner listing + on-demand scanning of an explorer session
+    app.router.add_get("/api/scanners", handle_list_scanners)
+    app.router.add_post("/api/explore/{session_id}/scan", handle_explore_scan)
+
     # Explorer session endpoints
     app.router.add_post("/api/explore/load", handle_explore_load)
     app.router.add_get("/api/explore/{session_id}/schema", handle_explore_schema)
@@ -656,6 +660,86 @@ def _get_session(request: web.Request) -> dict[str, Any]:
     if session_id not in sessions:
         raise web.HTTPNotFound(reason=f"Session '{session_id}' not found.")
     return cast(dict[str, Any], sessions[session_id])
+
+
+async def handle_list_scanners(_request: web.Request) -> web.Response:
+    """List available scanners with their descriptions and kind."""
+    from inspect_dataset.scanners import BUILTIN_SCANNERS, LLM_SCANNER_FACTORIES
+
+    scanners = [
+        {"name": s.name, "description": s.description, "kind": "static"} for s in BUILTIN_SCANNERS
+    ]
+    scanners.extend(
+        {"name": name, "description": "", "kind": "llm"} for name in sorted(LLM_SCANNER_FACTORIES)
+    )
+    return web.json_response(scanners)
+
+
+async def handle_explore_scan(request: web.Request) -> web.Response:
+    """Run selected scanners over an explorer session's records.
+
+    Request body::
+
+        {
+          "scanners": ["answer_length", "duplicate_questions"],  # optional
+          "model": "openai/gpt-4o-mini"                          # optional (LLM)
+        }
+
+    Omitting ``scanners`` runs all static scanners (plus LLM scanners when a
+    ``model`` is given). Returns the findings with stable ids.
+    """
+    session = _get_session(request)
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+
+    requested: list[str] | None = body.get("scanners")
+    model: str | None = body.get("model") or None
+
+    from inspect_dataset.scanner import AnyScanner, run_scanners, run_scanners_async
+    from inspect_dataset.scanners import BUILTIN_SCANNER_NAMES, LLM_SCANNER_FACTORIES
+
+    names = requested or list(BUILTIN_SCANNER_NAMES)
+    unknown = [
+        n for n in names if n not in BUILTIN_SCANNER_NAMES and n not in LLM_SCANNER_FACTORIES
+    ]
+    if unknown:
+        return web.json_response({"error": f"Unknown scanner(s): {', '.join(unknown)}"}, status=400)
+
+    static: list[AnyScanner] = [
+        BUILTIN_SCANNER_NAMES[n] for n in names if n in BUILTIN_SCANNER_NAMES
+    ]
+    llm_names = [n for n in names if n in LLM_SCANNER_FACTORIES]
+    if llm_names and not model:
+        return web.json_response(
+            {"error": f"LLM scanner(s) ({', '.join(llm_names)}) require a model."},
+            status=400,
+        )
+
+    records: list[dict[str, Any]] = session["records"]
+    fields = session["fields"]
+
+    try:
+        if llm_names:
+            llm = [LLM_SCANNER_FACTORIES[n](model) for n in llm_names]
+            run = await run_scanners_async(records, fields, [*static, *llm])
+        else:
+            run = await asyncio.to_thread(run_scanners, records, fields, static)
+    except Exception as exc:
+        logger.warning("Scan failed for session %s: %s", session["session_id"], exc)
+        return web.json_response({"error": str(exc)}, status=422)
+
+    findings = [f.to_dict() for f in run.findings]
+    for i, finding in enumerate(findings):
+        finding["id"] = i
+    return web.json_response(
+        {
+            "session_id": session["session_id"],
+            "total_findings": len(findings),
+            "findings": findings,
+        }
+    )
 
 
 async def handle_explore_schema(request: web.Request) -> web.Response:
