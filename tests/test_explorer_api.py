@@ -45,6 +45,49 @@ async def test_discover_cached_returns_list(server):
         assert isinstance(item["configs"], list)
 
 
+async def test_discover_cached_basic_returns_list(server):
+    resp = await get(server, "/api/discover/cached-basic")
+    assert resp.status == 200
+    data = await resp.json()
+    assert isinstance(data, list)
+    for item in data[:5]:
+        assert "repo_id" in item
+        assert "size_on_disk" in item
+        # Basic listing is scan-only: no splits/configs until cached-meta
+        assert "splits" not in item
+        assert "configs" not in item
+
+
+async def test_discover_cached_meta_missing_param(server):
+    resp = await get(server, "/api/discover/cached-meta")
+    assert resp.status == 400
+    body = await resp.json()
+    assert "error" in body
+
+
+async def test_discover_cached_meta_unknown_dataset(server):
+    resp = await get(
+        server,
+        "/api/discover/cached-meta?dataset=definitely-does-not-exist/xyzzy",
+    )
+    assert resp.status == 404
+
+
+async def test_discover_cached_meta_for_cached_dataset(server):
+    basic_resp = await get(server, "/api/discover/cached-basic")
+    datasets = await basic_resp.json()
+    if not datasets:
+        pytest.skip("No datasets in the local HF cache")
+
+    repo_id = datasets[0]["repo_id"]
+    resp = await get(server, f"/api/discover/cached-meta?dataset={repo_id}")
+    assert resp.status == 200
+    meta = await resp.json()
+    assert isinstance(meta["splits"], list)
+    assert isinstance(meta["configs"], list)
+    assert len(meta["splits"]) > 0
+
+
 async def test_discover_tasks_returns_list(server):
     resp = await get(server, "/api/discover/tasks")
     assert resp.status == 200

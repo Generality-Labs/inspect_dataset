@@ -320,6 +320,8 @@ def create_app(
 
     # Explorer discovery endpoints
     app.router.add_get("/api/discover/cached", handle_discover_cached)
+    app.router.add_get("/api/discover/cached-basic", handle_discover_cached_basic)
+    app.router.add_get("/api/discover/cached-meta", handle_discover_cached_meta)
     app.router.add_get("/api/discover/tasks", handle_discover_tasks)
     app.router.add_get("/api/discover/hf-schema", handle_discover_hf_schema)
 
@@ -531,6 +533,37 @@ async def handle_discover_cached(request: web.Request) -> web.Response:
 
     result = await asyncio.to_thread(list_cached_hf_datasets)
     return web.json_response(result)
+
+
+async def handle_discover_cached_basic(_request: web.Request) -> web.Response:
+    """List cached HF datasets from the local scan only — fast, no network.
+
+    Splits/configs are omitted; fetch them per dataset via
+    /api/discover/cached-meta.
+    """
+    from inspect_dataset._view.discovery import list_cached_hf_datasets_basic
+
+    result = await asyncio.to_thread(list_cached_hf_datasets_basic)
+    return web.json_response(result)
+
+
+async def handle_discover_cached_meta(request: web.Request) -> web.Response:
+    """Return splits/configs for a single cached dataset.
+
+    Query params: dataset (required). 404 if not in the local cache.
+    """
+    repo_id = request.rel_url.query.get("dataset", "").strip()
+    if not repo_id:
+        return web.json_response({"error": "dataset is required"}, status=400)
+
+    from inspect_dataset._view.discovery import cached_dataset_meta
+
+    meta = await asyncio.to_thread(cached_dataset_meta, repo_id)
+    if meta is None:
+        return web.json_response(
+            {"error": f"Dataset '{repo_id}' not found in the local cache."}, status=404
+        )
+    return web.json_response(meta)
 
 
 async def handle_discover_tasks(request: web.Request) -> web.Response:

@@ -159,8 +159,8 @@ def fetch_hf_splits(
     return list({s["split"] for s in splits_data if isinstance(s, dict) and "split" in s})
 
 
-def list_cached_hf_datasets() -> list[dict[str, Any]]:
-    """Return metadata for all HuggingFace datasets in the local cache."""
+def _scan_dataset_repos() -> list[Any]:
+    """Scan the local HF cache and return dataset repos sorted by repo_id."""
     try:
         from huggingface_hub import scan_cache_dir
     except ImportError:
@@ -174,54 +174,107 @@ def list_cached_hf_datasets() -> list[dict[str, Any]]:
 
     dataset_repos = [r for r in info.repos if r.repo_type == "dataset"]
     dataset_repos.sort(key=lambda r: r.repo_id)
+    return dataset_repos
 
-    def _splits_for_repo(repo: Any) -> list[str]:
-        """Return splits for a single repo, using API then fallback."""
-        api_splits = fetch_hf_splits(repo.repo_id)
-        if api_splits is not None:
-            return sorted(api_splits) or ["train"]
-        # Offline fallback: match whole path segments to avoid substring hits
-        # on repos whose name contains a split word (e.g. "trainset/foo")
-        known = ("train", "test", "validation", "dev")
-        found: set[str] = set()
-        for rev in repo.revisions:
-            for f in rev.files:
-                stem = f.file_name.lower()
-                for split_name in known:
-                    if (
-                        f"/{split_name}-" in stem
-                        or f"/{split_name}." in stem
-                        or stem.startswith((f"{split_name}-", f"{split_name}."))
-                    ):
-                        found.add(split_name)
-        return sorted(found) or ["train"]
 
-    def _configs_for_repo(repo: Any) -> list[str]:
-        """Return config/subset names for a single repo, using API then fallback.
+def _splits_for_repo(repo: Any) -> list[str]:
+    """Return splits for a single repo, using API then fallback."""
+    api_splits = fetch_hf_splits(repo.repo_id)
+    if api_splits is not None:
+        return sorted(api_splits) or ["train"]
+    # Offline fallback: match whole path segments to avoid substring hits
+    # on repos whose name contains a split word (e.g. "trainset/foo")
+    known = ("train", "test", "validation", "dev")
+    found: set[str] = set()
+    for rev in repo.revisions:
+        for f in rev.files:
+            stem = f.file_name.lower()
+            for split_name in known:
+                if (
+                    f"/{split_name}-" in stem
+                    or f"/{split_name}." in stem
+                    or stem.startswith((f"{split_name}-", f"{split_name}."))
+                ):
+                    found.add(split_name)
+    return sorted(found) or ["train"]
 
-        Returns ``[]`` when a real config name can't be determined — callers
-        then load with no ``name`` kwarg, preserving pre-config behaviour for
-        single-config datasets (whose sole config may not be named "default").
 
-        Offline fallback: HF lays multi-config datasets out as
-        ``<config>/<split>-*.parquet``; single-config ones use a generic
-        ``data/`` directory rather than a real config name, so that (and any
-        directory holding no data files, e.g. ``images/``) is excluded.
-        """
-        api_configs = fetch_hf_configs(repo.repo_id)
-        if api_configs is not None:
-            return api_configs
-        data_exts = (".parquet", ".json", ".jsonl", ".csv", ".arrow")
-        found: set[str] = set()
-        for rev in repo.revisions:
-            for f in rev.files:
-                parts = f.file_path.relative_to(rev.snapshot_path).parts
-                if len(parts) > 1 and parts[0] != "data" and parts[-1].lower().endswith(data_exts):
-                    found.add(parts[0])
-        return sorted(found)
+def _configs_for_repo(repo: Any) -> list[str]:
+    """Return config/subset names for a single repo, using API then fallback.
 
-    def _meta_for_repo(repo: Any) -> tuple[list[str], list[str]]:
-        return _splits_for_repo(repo), _configs_for_repo(repo)
+    Returns ``[]`` when a real config name can't be determined — callers
+    then load with no ``name`` kwarg, preserving pre-config behaviour for
+    single-config datasets (whose sole config may not be named "default").
+
+    Offline fallback: HF lays multi-config datasets out as
+    ``<config>/<split>-*.parquet``; single-config ones use a generic
+    ``data/`` directory rather than a real config name, so that (and any
+    directory holding no data files, e.g. ``images/``) is excluded.
+    """
+    api_configs = fetch_hf_configs(repo.repo_id)
+    if api_configs is not None:
+        return api_configs
+    data_exts = (".parquet", ".json", ".jsonl", ".csv", ".arrow")
+    found: set[str] = set()
+    for rev in repo.revisions:
+        for f in rev.files:
+            parts = f.file_path.relative_to(rev.snapshot_path).parts
+            if len(parts) > 1 and parts[0] != "data" and parts[-1].lower().endswith(data_exts):
+                found.add(parts[0])
+    return sorted(found)
+
+
+# Splits/configs per repo, keyed by (repo_id, size_on_disk, last_modified) so
+# entries invalidate when the cached snapshot changes. Metadata lookups hit
+# the HF dataset-viewer API (or walk the snapshot's file tree), so caching
+# them for the life of the server keeps repeat page loads instant.
+_META_CACHE: dict[tuple[str, int, float | None], dict[str, list[str]]] = {}
+
+
+def _meta_cache_key(repo: Any) -> tuple[str, int, float | None]:
+    return (repo.repo_id, repo.size_on_disk, repo.last_modified)
+
+
+def _meta_for_repo(repo: Any) -> dict[str, list[str]]:
+    key = _meta_cache_key(repo)
+    cached = _META_CACHE.get(key)
+    if cached is None:
+        cached = {"splits": _splits_for_repo(repo), "configs": _configs_for_repo(repo)}
+        _META_CACHE[key] = cached
+    return cached
+
+
+def list_cached_hf_datasets_basic() -> list[dict[str, Any]]:
+    """Return cached HF datasets from the local scan only — no network.
+
+    Fast enough to serve immediately; splits/configs are omitted and can be
+    filled in per dataset via cached_dataset_meta().
+    """
+    return [
+        {
+            "repo_id": repo.repo_id,
+            "size_on_disk": repo.size_on_disk,
+            "last_modified": repo.last_modified,
+        }
+        for repo in _scan_dataset_repos()
+    ]
+
+
+def cached_dataset_meta(repo_id: str) -> dict[str, list[str]] | None:
+    """Return {"splits": [...], "configs": [...]} for one cached dataset.
+
+    Results are memoised per snapshot. Returns None if the repo is not in
+    the local cache.
+    """
+    for repo in _scan_dataset_repos():
+        if repo.repo_id == repo_id:
+            return _meta_for_repo(repo)
+    return None
+
+
+def list_cached_hf_datasets() -> list[dict[str, Any]]:
+    """Return full metadata for all HuggingFace datasets in the local cache."""
+    dataset_repos = _scan_dataset_repos()
 
     from concurrent.futures import ThreadPoolExecutor
 
@@ -232,11 +285,11 @@ def list_cached_hf_datasets() -> list[dict[str, Any]]:
         {
             "repo_id": repo.repo_id,
             "size_on_disk": repo.size_on_disk,
-            "splits": splits,
-            "configs": configs,
+            "splits": meta["splits"],
+            "configs": meta["configs"],
             "last_modified": repo.last_modified,
         }
-        for repo, (splits, configs) in zip(dataset_repos, meta_results, strict=True)
+        for repo, meta in zip(dataset_repos, meta_results, strict=True)
     ]
     return result
 
