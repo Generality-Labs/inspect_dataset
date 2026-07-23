@@ -85599,8 +85599,22 @@ function ExplorerView() {
 	const schema = (explorerSchema ?? localSchema)?.schema ?? [];
 	const session = explorerSession;
 	const columnNames = schema.length > 0 ? schema.filter((f) => !f.name.startsWith("__")).map((f) => f.name) : (session?.columns ?? []).filter((c) => !c.startsWith("__"));
+	const columnKey = columnNames.join("\0");
+	const sampleRows = (0, import_react.useMemo)(() => rows.slice(0, 50), [sid, rows.length > 0]);
 	const colDefs = (0, import_react.useMemo)(() => {
 		const headerWidth = (name) => Math.min(560, Math.max(120, name.length * 8.5 + 56));
+		const displayLength = (v) => {
+			if (v === null || v === void 0) return 4;
+			if (typeof v === "string") return v.length;
+			if (Array.isArray(v)) return 10;
+			if (typeof v === "object") return 8;
+			return String(v).length;
+		};
+		const contentWidth = (name) => {
+			const lengths = sampleRows.map((r) => displayLength(r[name])).sort((a, b) => a - b);
+			if (lengths.length === 0) return 0;
+			return lengths[Math.min(lengths.length - 1, Math.floor(lengths.length * .9))] * 7.5 + 40;
+		};
 		return [{
 			headerName: "#",
 			field: "__index",
@@ -85611,7 +85625,7 @@ function ExplorerView() {
 		}, ...columnNames.map((name) => ({
 			headerName: name,
 			field: name,
-			width: headerWidth(name),
+			width: Math.min(600, Math.max(headerWidth(name), contentWidth(name))),
 			minWidth: 80,
 			sortable: true,
 			filter: true,
@@ -85622,7 +85636,7 @@ function ExplorerView() {
 				expandNested: expandNestedRef.current
 			})
 		}))];
-	}, [columnNames.join("\0")]);
+	}, [columnKey, sampleRows]);
 	const toggleExpandNested = (0, import_react.useCallback)((on) => {
 		expandNestedRef.current = on;
 		setExpandNested(on);
