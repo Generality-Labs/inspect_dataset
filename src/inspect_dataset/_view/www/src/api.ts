@@ -1,5 +1,6 @@
 import type {
   CachedDataset,
+  CachedDatasetMeta,
   DatasetInfo,
   ExploreRecordDetail,
   ExplorerSession,
@@ -93,6 +94,22 @@ export async function fetchHfSchema(
 export async function fetchCachedDatasets(): Promise<CachedDataset[]> {
   const res = await fetch(`${BASE}/discover/cached`);
   if (!res.ok) return [];
+  return res.json();
+}
+
+export async function fetchCachedDatasetsBasic(): Promise<CachedDataset[]> {
+  const res = await fetch(`${BASE}/discover/cached-basic`);
+  if (!res.ok) return [];
+  return res.json();
+}
+
+export async function fetchCachedDatasetMeta(
+  repoId: string,
+): Promise<CachedDatasetMeta | null> {
+  const res = await fetch(
+    `${BASE}/discover/cached-meta?dataset=${encodeURIComponent(repoId)}`,
+  );
+  if (!res.ok) return null;
   return res.json();
 }
 

@@ -12026,9 +12026,14 @@ async function fetchHfSchema(repoId, config) {
 		return null;
 	}
 }
-async function fetchCachedDatasets() {
-	const res = await fetch(`${BASE}/discover/cached`);
+async function fetchCachedDatasetsBasic() {
+	const res = await fetch(`${BASE}/discover/cached-basic`);
 	if (!res.ok) return [];
+	return res.json();
+}
+async function fetchCachedDatasetMeta(repoId) {
+	const res = await fetch(`${BASE}/discover/cached-meta?dataset=${encodeURIComponent(repoId)}`);
+	if (!res.ok) return null;
 	return res.json();
 }
 async function fetchInstalledTasks() {
@@ -84666,6 +84671,7 @@ function CachedDatasetsList({ datasets, loading, onSelect }) {
 						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("th", { style: { width: 80 } })
 					] })
 				}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("tbody", { children: filtered.map((ds) => {
+					const metaPending = ds.splits === void 0;
 					const splits = ds.splits ?? [];
 					const configs = ds.configs ?? [];
 					const split = selectedSplits[ds.repo_id] ?? splits[0] ?? "train";
@@ -84684,7 +84690,16 @@ function CachedDatasetsList({ datasets, loading, onSelect }) {
 								className: "text-body-secondary",
 								children: formatBytes(ds.size_on_disk)
 							}),
-							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("td", { children: configs.length > 1 ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("select", {
+							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("td", { children: metaPending ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+								className: "spinner-border spinner-border-sm text-body-tertiary",
+								role: "status",
+								"aria-label": "Loading configs",
+								style: {
+									width: 12,
+									height: 12,
+									borderWidth: 1
+								}
+							}) : configs.length > 1 ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("select", {
 								className: "form-select form-select-sm py-0",
 								style: { fontSize: "0.8rem" },
 								value: config,
@@ -84700,7 +84715,16 @@ function CachedDatasetsList({ datasets, loading, onSelect }) {
 								className: "text-body-secondary",
 								children: config ?? "—"
 							}) }),
-							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("td", { children: splits.length > 1 ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("select", {
+							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("td", { children: metaPending ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+								className: "spinner-border spinner-border-sm text-body-tertiary",
+								role: "status",
+								"aria-label": "Loading splits",
+								style: {
+									width: 12,
+									height: 12,
+									borderWidth: 1
+								}
+							}) : splits.length > 1 ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("select", {
 								className: "form-select form-select-sm py-0",
 								style: { fontSize: "0.8rem" },
 								value: split,
@@ -84820,15 +84844,39 @@ function ExplorerHome() {
 	const explorerError = useStore((s) => s.explorerError);
 	const navigate = useNavigate();
 	(0, import_react.useEffect)(() => {
+		let cancelled = false;
 		fetchDatasets().then((ds) => setLocalFindings(ds)).catch(() => setLocalFindings([]));
-		fetchCachedDatasets().then((ds) => {
+		fetchCachedDatasetsBasic().then((ds) => {
+			if (cancelled) return;
 			setCachedDatasets(ds);
 			setCachedLoading(false);
+			const queue = ds.map((d) => d.repo_id);
+			const fillNext = async () => {
+				for (;;) {
+					const repoId = queue.shift();
+					if (repoId === void 0 || cancelled) return;
+					const meta = await fetchCachedDatasetMeta(repoId);
+					if (cancelled) return;
+					const resolved = meta ?? {
+						splits: ["train"],
+						configs: []
+					};
+					setCachedDatasets((prev) => prev.map((d) => d.repo_id === repoId ? {
+						...d,
+						...resolved
+					} : d));
+				}
+			};
+			const workers = Math.min(6, queue.length);
+			for (let i = 0; i < workers; i++) fillNext();
 		});
 		fetchInstalledTasks().then((ts) => {
 			setInstalledTasks(ts);
 			setTasksLoading(false);
 		});
+		return () => {
+			cancelled = true;
+		};
 	}, []);
 	const handleLoad = async (source, sourceType, split, limit, config) => {
 		const session = await startExplorerSession(source, sourceType, split, limit, config);

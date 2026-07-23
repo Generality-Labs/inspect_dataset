@@ -10,9 +10,15 @@ export interface DatasetInfo {
 export interface CachedDataset {
   repo_id: string;
   size_on_disk: number;
+  // Absent until the per-dataset meta fetch resolves (cached-basic listing).
+  splits?: string[];
+  configs?: string[];
+  last_modified: number;
+}
+
+export interface CachedDatasetMeta {
   splits: string[];
   configs: string[];
-  last_modified: number;
 }
 
 export interface InstalledTask {
