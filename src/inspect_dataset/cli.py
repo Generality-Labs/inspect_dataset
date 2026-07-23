@@ -452,7 +452,14 @@ def _resolve_findings_dirs(paths: tuple[str, ...]) -> list[str]:
     default=False,
     help="Don't automatically open the browser.",
 )
-def view(findings_dirs: tuple[str, ...], port: int, no_open: bool) -> None:
+@click.option(
+    "--reload",
+    "reload_",
+    is_flag=True,
+    default=False,
+    help="Restart the server when Python source files change (requires watchfiles).",
+)
+def view(findings_dirs: tuple[str, ...], port: int, no_open: bool, reload_: bool) -> None:
     r"""Launch the interactive dataset explorer.
 
     When called without arguments, opens the explorer home screen where you can
@@ -506,6 +513,33 @@ def view(findings_dirs: tuple[str, ...], port: int, no_open: bool) -> None:
         webbrowser.open(url)
 
     dirs_arg: list[str | Path] | None = list(dirs) if dirs else None
+
+    if reload_:
+        try:
+            from watchfiles import PythonFilter, run_process
+        except ImportError as e:
+            raise click.ClickException(
+                "--reload requires the watchfiles package. "
+                "Install it with `uv add --dev watchfiles` (or `pip install watchfiles`)."
+            ) from e
+
+        import inspect_dataset
+
+        watch_dir = Path(inspect_dataset.__file__).parent
+        console.print(f"Auto-reload enabled, watching [bold]{watch_dir}[/bold]")
+        # Note: the server keeps explorer sessions in memory, so each reload
+        # drops them (like Django's dev server dropping module state).
+        run_process(
+            watch_dir,
+            target=run_server,
+            kwargs={"findings_dirs": dirs_arg, "port": port},
+            watch_filter=PythonFilter(),
+            callback=lambda changes: console.print(
+                f"[dim]Detected {len(changes)} change(s), restarting server…[/dim]"
+            ),
+        )
+        return
+
     run_server(dirs_arg, port=port)
 
 
