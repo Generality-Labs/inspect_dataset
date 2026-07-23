@@ -84925,6 +84925,62 @@ function ExplorerHome() {
 }
 //#endregion
 //#region src/components/ExplorerView.tsx
+var gridTheme = themeQuartz.withParams({ selectedRowBackgroundColor: "rgba(13, 110, 253, 0.14)" });
+function ResizablePanel({ width, onWidth, min = 280, max = 900, children }) {
+	const dragging = (0, import_react.useRef)(false);
+	(0, import_react.useEffect)(() => {
+		const move = (e) => {
+			if (!dragging.current) return;
+			const next = window.innerWidth - e.clientX;
+			onWidth(Math.min(max, Math.max(min, next)));
+		};
+		const up = () => {
+			if (!dragging.current) return;
+			dragging.current = false;
+			document.body.style.userSelect = "";
+			document.body.style.cursor = "";
+		};
+		window.addEventListener("mousemove", move);
+		window.addEventListener("mouseup", up);
+		return () => {
+			window.removeEventListener("mousemove", move);
+			window.removeEventListener("mouseup", up);
+		};
+	}, [
+		onWidth,
+		min,
+		max
+	]);
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+		className: "d-flex",
+		style: {
+			width,
+			minWidth: width,
+			height: "100%"
+		},
+		children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+			onMouseDown: () => {
+				dragging.current = true;
+				document.body.style.userSelect = "none";
+				document.body.style.cursor = "col-resize";
+			},
+			title: "Drag to resize",
+			style: {
+				width: 6,
+				cursor: "col-resize",
+				flexShrink: 0
+			},
+			className: "bg-body-secondary border-start"
+		}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+			className: "flex-grow-1",
+			style: {
+				minWidth: 0,
+				height: "100%"
+			},
+			children
+		})]
+	});
+}
 ModuleRegistry.registerModules([AllCommunityModule]);
 function CellRenderer({ value }) {
 	if (value === null || value === void 0) return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
@@ -84993,20 +85049,23 @@ var TYPE_BADGE = {
 	dict: "bg-secondary",
 	null: "bg-light text-dark border"
 };
-function SchemaPanel({ schema, onClose }) {
+function SchemaPanel({ schema, onClose, hiddenColumns, onToggleColumn }) {
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-		className: "border-start d-flex flex-column bg-body",
+		className: "d-flex flex-column bg-body",
 		style: {
-			width: 300,
-			minWidth: 300,
+			width: "100%",
+			height: "100%",
 			overflowY: "auto"
 		},
 		children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 			className: "p-3 border-bottom d-flex justify-content-between align-items-center",
-			children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("h6", {
+			children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("h6", {
 				className: "mb-0 fw-semibold",
 				children: "Schema"
-			}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+			}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+				className: "small text-body-secondary",
+				children: "Tick a field to show its column"
+			})] }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
 				className: "btn btn-sm btn-close",
 				onClick: onClose,
 				"aria-label": "Close schema panel"
@@ -85014,46 +85073,56 @@ function SchemaPanel({ schema, onClose }) {
 		}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 			className: "px-3 py-2",
 			children: schema.map((f) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-				className: "mb-3",
-				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-					className: "d-flex justify-content-between align-items-center mb-1",
-					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-						className: "fw-semibold small text-truncate me-2",
-						children: f.name
-					}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-						className: `badge small flex-shrink-0 ${TYPE_BADGE[f.type] ?? "bg-secondary"}`,
-						children: f.type
-					})]
+				className: "mb-3 d-flex align-items-start",
+				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+					type: "checkbox",
+					className: "form-check-input mt-1 me-2 flex-shrink-0",
+					checked: !hiddenColumns.has(f.name),
+					onChange: (e) => onToggleColumn(f.name, e.target.checked),
+					title: hiddenColumns.has(f.name) ? "Show column" : "Hide column"
 				}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-					className: "small text-body-secondary",
-					children: [
-						f.null_count > 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
-							className: "me-2",
-							children: [
-								f.null_count,
-								" null (",
-								Math.round(f.null_count / f.total * 100),
-								"%)"
-							]
-						}),
-						f.unique_count !== void 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
-							className: "me-2",
-							children: [f.unique_count, " unique"]
-						}),
-						f.avg_length !== void 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { children: [
-							"avg ",
-							f.avg_length,
-							" chars"
-						] }),
-						f.mean !== void 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { children: [
-							f.min,
-							"–",
-							f.max,
-							" (mean ",
-							f.mean,
-							")"
-						] })
-					]
+					className: "flex-grow-1",
+					style: { minWidth: 0 },
+					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+						className: "d-flex justify-content-between align-items-center mb-1",
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+							className: "fw-semibold small me-2",
+							children: f.name
+						}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+							className: `badge small flex-shrink-0 ${TYPE_BADGE[f.type] ?? "bg-secondary"}`,
+							children: f.type
+						})]
+					}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+						className: "small text-body-secondary",
+						children: [
+							f.null_count > 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+								className: "me-2",
+								children: [
+									f.null_count,
+									" null (",
+									Math.round(f.null_count / f.total * 100),
+									"%)"
+								]
+							}),
+							f.unique_count !== void 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+								className: "me-2",
+								children: [f.unique_count, " unique"]
+							}),
+							f.avg_length !== void 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { children: [
+								"avg ",
+								f.avg_length,
+								" chars"
+							] }),
+							f.mean !== void 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { children: [
+								f.min,
+								"–",
+								f.max,
+								" (mean ",
+								f.mean,
+								")"
+							] })
+						]
+					})]
 				})]
 			}, f.name))
 		})]
@@ -85078,10 +85147,10 @@ function RecordDetailPanel({ sessionId, idx, onClose, onPrev, onNext, hasPrev, h
 	const detail = loaded && loaded.key === currentKey ? loaded.detail : null;
 	const loading = loaded === null || loaded.key !== currentKey;
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-		className: "border-start d-flex flex-column bg-body",
+		className: "d-flex flex-column bg-body",
 		style: {
-			width: 360,
-			minWidth: 360,
+			width: "100%",
+			height: "100%",
 			overflowY: "auto"
 		},
 		children: [
@@ -85219,6 +85288,9 @@ function ExplorerView() {
 	const [selectedIdx, setSelectedIdx] = (0, import_react.useState)(null);
 	const [offset, setOffset] = (0, import_react.useState)(0);
 	const [localSchema, setLocalSchema] = (0, import_react.useState)(null);
+	const [hiddenColumns, setHiddenColumns] = (0, import_react.useState)(/* @__PURE__ */ new Set());
+	const [schemaWidth, setSchemaWidth] = (0, import_react.useState)(360);
+	const [recordWidth, setRecordWidth] = (0, import_react.useState)(440);
 	const gridApi = (0, import_react.useRef)(null);
 	const sid = sessionId ?? explorerSession?.session_id ?? null;
 	(0, import_react.useEffect)(() => {
@@ -85263,25 +85335,37 @@ function ExplorerView() {
 	]);
 	const schema = (explorerSchema ?? localSchema)?.schema ?? [];
 	const session = explorerSession;
-	const colDefs = [{
-		headerName: "#",
-		field: "__index",
-		width: 65,
-		pinned: "left",
-		sort: "asc",
-		sortable: true
-	}, ...(schema.length > 0 ? schema.filter((f) => !f.name.startsWith("__")).map((f) => f.name) : (session?.columns ?? []).filter((c) => !c.startsWith("__"))).map((name) => {
-		return {
+	const columnNames = schema.length > 0 ? schema.filter((f) => !f.name.startsWith("__")).map((f) => f.name) : (session?.columns ?? []).filter((c) => !c.startsWith("__"));
+	const colDefs = (0, import_react.useMemo)(() => {
+		const headerWidth = (name) => Math.min(560, Math.max(120, name.length * 8.5 + 56));
+		return [{
+			headerName: "#",
+			field: "__index",
+			width: 72,
+			pinned: "left",
+			sort: "asc",
+			sortable: true
+		}, ...columnNames.map((name) => ({
 			headerName: name,
 			field: name,
-			flex: schema.find((f) => f.name === name)?.type === "str" ? 2 : 1,
+			width: headerWidth(name),
 			minWidth: 80,
 			sortable: true,
 			filter: true,
+			resizable: true,
 			valueFormatter: () => "",
 			cellRenderer: (params) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(CellRenderer, { value: params.value })
-		};
-	})];
+		}))];
+	}, [columnNames.join("\0")]);
+	const toggleColumn = (0, import_react.useCallback)((name, visible) => {
+		gridApi.current?.setColumnsVisible([name], visible);
+		setHiddenColumns((prev) => {
+			const next = new Set(prev);
+			if (visible) next.delete(name);
+			else next.add(name);
+			return next;
+		});
+	}, []);
 	const handleClose = () => {
 		clearSession();
 		navigate("/");
@@ -85362,7 +85446,7 @@ function ExplorerView() {
 								minHeight: 0
 							},
 							children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(AgGridReact, {
-								theme: themeQuartz,
+								theme: gridTheme,
 								rowData: rows,
 								columnDefs: colDefs,
 								onGridReady: (p) => {
@@ -85376,7 +85460,10 @@ function ExplorerView() {
 									mode: "singleRow",
 									enableClickSelection: true
 								},
-								getRowStyle: (p) => p.data?.__index === selectedIdx ? { background: "var(--bs-primary-bg-subtle)" } : void 0
+								getRowStyle: (p) => p.data?.__index === selectedIdx ? {
+									background: "var(--bs-primary-bg-subtle)",
+									color: "var(--bs-primary-text-emphasis)"
+								} : void 0
 							})
 						}), offset < total && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 							className: "border-top px-3 py-2 d-flex align-items-center gap-3 bg-body-tertiary small",
@@ -85404,18 +85491,28 @@ function ExplorerView() {
 							})]
 						})] })
 					}),
-					showSchema && schema.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(SchemaPanel, {
-						schema,
-						onClose: () => setShowSchema(false)
+					showSchema && schema.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ResizablePanel, {
+						width: schemaWidth,
+						onWidth: setSchemaWidth,
+						children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(SchemaPanel, {
+							schema,
+							onClose: () => setShowSchema(false),
+							hiddenColumns,
+							onToggleColumn: toggleColumn
+						})
 					}),
-					selectedIdx !== null && sid && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(RecordDetailPanel, {
-						sessionId: sid,
-						idx: selectedIdx,
-						onClose: () => setSelectedIdx(null),
-						onPrev: () => setSelectedIdx((i) => i !== null && i > 0 ? i - 1 : i),
-						onNext: () => setSelectedIdx((i) => i !== null && i < total - 1 ? i + 1 : i),
-						hasPrev: selectedIdx > 0,
-						hasNext: selectedIdx < total - 1
+					selectedIdx !== null && sid && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ResizablePanel, {
+						width: recordWidth,
+						onWidth: setRecordWidth,
+						children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(RecordDetailPanel, {
+							sessionId: sid,
+							idx: selectedIdx,
+							onClose: () => setSelectedIdx(null),
+							onPrev: () => setSelectedIdx((i) => i !== null && i > 0 ? i - 1 : i),
+							onNext: () => setSelectedIdx((i) => i !== null && i < total - 1 ? i + 1 : i),
+							hasPrev: selectedIdx > 0,
+							hasNext: selectedIdx < total - 1
+						})
 					})
 				]
 			})
