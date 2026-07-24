@@ -519,12 +519,17 @@ Design principles:
 - [x] `numeric_provenance` — every number in gold (comma/`$`-normalised) must appear in at least one tool output; misses are high-severity transcription-error candidates
 - [x] `tool_consensus` — folded into `text_layer_recall`'s none-of-the-tools / all-of-the-tools semantics rather than shipping as a separate score-based scanner
 
-#### v0.6.2 — Vision LLM scanners
+#### v0.6.2 — Vision LLM scanners (in progress)
 
-- [ ] Extend the LLM scanner plumbing to image inputs
-- [ ] `gold_fidelity` — page image + gold markdown → specific discrepancies with locations
+- [x] Extend the LLM scanner plumbing to image inputs — `judge_batch_vision()` in `_llm.py` sends the page image as an inspect_ai `ContentImage` block ahead of the prompt text; `page_image()` in `_artifacts.py` resolves `<artifacts-dir>/page.<ext>` from `--files-root`. Credentials flow through the existing `--model` flag (e.g. `anthropic/claude-opus-4-8`); no new plumbing.
+- [x] `gold_fidelity` — page image + gold markdown → material discrepancy judgment (wrong numbers, dropped/invented rows, garbled text). Skips records with no page image; text-only unit tests use a mocked model, so the suite needs no API key.
 - [ ] `gold_completeness` — page regions not represented in gold at all
 - [ ] `reading_order` — gold block order matches visual reading order
+
+> **Handoff note (where we're up to).** The image plumbing (`judge_batch_vision`, `page_image`) and the first vision scanner (`gold_fidelity`) are done, tested against a mocked model, and merged into this line of work. Two things remain:
+>
+> 1. **A live end-to-end run is blocked on credentials, not code.** This is a Claude Code on the web (cloud) environment; nobody has interactive shell access, so a key can't be `export`ed or written to `.env` by hand. `ANTHROPIC_API_KEY` must be added as a **secret / environment variable in the environment's configuration** (web app → environment settings), which is injected at container start — so it only appears in a *new* session, not a running one. Once a fresh session has it (verify with `env | grep -c ANTHROPIC_API_KEY`, don't print the value), run the real vision pass against the benchmark's cached `page.png` images: `inspect-dataset scan <samples> --scanner-module <domain-module> --files-root <cache> --scanners gold_fidelity --model anthropic/claude-opus-4-8`. Model choice: Opus 4.8 (`claude-opus-4-8`) is the default fidelity judge — high-res vision to 2576px long edge matters for dense tables and small text; Sonnet 5 (`claude-sonnet-5`, same high-res vision) is the cost-efficient choice for scaling across many samples; **not** Haiku (no high-res vision).
+> 2. **`gold_completeness` and `reading_order` are not started.** Both ride the same `judge_batch_vision` path that's now in place, so each is a new scanner module + prompt + mocked-model test, following `gold_fidelity` as the template. Neither needs a key to build or unit-test.
 
 #### v0.6.3 — Viewer: side-by-side audit panel (in progress)
 
