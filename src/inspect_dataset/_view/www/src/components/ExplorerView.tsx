@@ -91,7 +91,33 @@ ModuleRegistry.registerModules([AllCommunityModule]);
 
 // ── Cell renderers ─────────────────────────────────────────────────────────
 
-function CellRenderer({ value }: { value: CellValue }) {
+// Single-line JSON for expanded nested values; tooltip capped so a huge
+// cell can't produce a megabyte hover.
+function NestedJson({ value }: { value: CellValue }) {
+  const str = JSON.stringify(value) ?? "";
+  return (
+    <span
+      className="font-monospace small"
+      title={str.length > 1000 ? `${str.slice(0, 1000)}…` : str}
+      style={{
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        whiteSpace: "nowrap",
+        display: "block",
+      }}
+    >
+      {str}
+    </span>
+  );
+}
+
+function CellRenderer({
+  value,
+  expandNested,
+}: {
+  value: CellValue;
+  expandNested: boolean;
+}) {
   if (value === null || value === undefined) {
     return (
       <span className="fst-italic" style={{ opacity: 0.55 }}>
@@ -123,6 +149,7 @@ function CellRenderer({ value }: { value: CellValue }) {
         </span>
       );
     }
+    if (expandNested) return <NestedJson value={value} />;
     return (
       <span
         className="font-monospace small"
@@ -141,6 +168,7 @@ function CellRenderer({ value }: { value: CellValue }) {
     );
   }
   if (Array.isArray(value)) {
+    if (expandNested) return <NestedJson value={value} />;
     return (
       <span className="small" style={{ opacity: 0.7 }}>
         [{value.length} items]
@@ -643,6 +671,10 @@ export function ExplorerView() {
   const [schemaWidth, setSchemaWidth] = useState(360);
   const [recordWidth, setRecordWidth] = useState(440);
   const [scannersWidth, setScannersWidth] = useState(360);
+  const [expandNested, setExpandNested] = useState(false);
+  // Read by cell renderers via ref so colDefs stay referentially stable
+  // (invalidating them on toggle would reset manual column resizes).
+  const expandNestedRef = useRef(expandNested);
   const gridApi = useRef<GridApi | null>(null);
 
   const sid = sessionId ?? explorerSession?.session_id ?? null;
@@ -705,13 +737,45 @@ export function ExplorerView() {
 
   const columnKey = columnNames.join("\u0000");
 
-  // Size each column to at least fit its header text (rather than squeezing
-  // everything into the viewport with flex), so wide datasets scroll
-  // horizontally and headers stay legible. Memoised so user resizes and
-  // visibility toggles (applied imperatively) aren't reset on every render.
+  // Sample of the first page of rows, used to estimate content-based column
+  // widths. Keyed on (session, rows-arrived) rather than the rows array so
+  // loadMore appends don't produce a new sample — colDefs would change
+  // identity and reset the user's manual column resizes.
+  const hasRows = rows.length > 0;
+  const sampleRows: ExploreRow[] = useMemo(
+    () => rows.slice(0, 50),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [sid, hasRows],
+  );
+
+  // Size each column at least to fit its header text, widened toward the
+  // content's typical width (90th percentile of the sampled rows' display
+  // length) up to a 600px cap, so text-heavy datasets get readable columns
+  // while wide datasets still scroll horizontally. Memoised so user resizes
+  // and visibility toggles (applied imperatively) aren't reset on re-render.
   const colDefs: ColDef<ExploreRow>[] = useMemo(() => {
     const headerWidth = (name: string) =>
       Math.min(560, Math.max(120, name.length * 8.5 + 56));
+
+    // Approximate on-screen length of a cell's collapsed rendering.
+    const displayLength = (v: CellValue): number => {
+      if (v === null || v === undefined) return 4;
+      if (typeof v === "string") return v.length;
+      if (Array.isArray(v)) return 10; // "[x items]"
+      if (typeof v === "object") return 8; // "{…}" / image / bytes badge
+      return String(v).length;
+    };
+
+    const contentWidth = (name: string): number => {
+      const lengths = sampleRows
+        .map((r) => displayLength(r[name] as CellValue))
+        .sort((a, b) => a - b);
+      if (lengths.length === 0) return 0;
+      const p90 =
+        lengths[Math.min(lengths.length - 1, Math.floor(lengths.length * 0.9))];
+      return p90 * 7.5 + 40; // ~avg char width in the cell font + padding
+    };
+
     return [
       {
         headerName: "#",
@@ -724,20 +788,30 @@ export function ExplorerView() {
       ...columnNames.map((name) => ({
         headerName: name,
         field: name as keyof ExploreRow & string,
-        width: headerWidth(name),
+        width: Math.min(600, Math.max(headerWidth(name), contentWidth(name))),
         minWidth: 80,
         sortable: true,
         filter: true,
         resizable: true,
         valueFormatter: () => "",
         cellRenderer: (params: ICellRendererParams<ExploreRow>) => (
-          <CellRenderer value={params.value as CellValue} />
+          <CellRenderer
+            value={params.value as CellValue}
+            expandNested={expandNestedRef.current}
+          />
         ),
       })),
     ];
     // columnKey captures the (ordered) column set; schema identity is stable.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [columnKey]);
+  }, [columnKey, sampleRows]);
+
+  const toggleExpandNested = useCallback((on: boolean) => {
+    expandNestedRef.current = on;
+    setExpandNested(on);
+    // Renderers read the ref, so force re-render of already-drawn cells.
+    gridApi.current?.refreshCells({ force: true });
+  }, []);
 
   const toggleColumn = useCallback((name: string, visible: boolean) => {
     gridApi.current?.setColumnsVisible([name], visible);
@@ -797,7 +871,23 @@ export function ExplorerView() {
             </span>
           </span>
         )}
-        <div className="d-flex gap-2">
+        <div className="d-flex gap-2 align-items-center">
+          <div
+            className="form-check form-switch mb-0 me-1 small"
+            title="Show list/object contents as JSON in cells"
+          >
+            <input
+              className="form-check-input"
+              type="checkbox"
+              role="switch"
+              id="expand-nested-switch"
+              checked={expandNested}
+              onChange={(e) => toggleExpandNested(e.target.checked)}
+            />
+            <label className="form-check-label" htmlFor="expand-nested-switch">
+              Expand nested
+            </label>
+          </div>
           <button
             className={`btn btn-sm ${showSchema ? "btn-secondary" : "btn-outline-secondary"}`}
             onClick={() => setShowSchema((v) => !v)}
