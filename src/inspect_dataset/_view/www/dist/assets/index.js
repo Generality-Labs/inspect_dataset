@@ -85064,7 +85064,24 @@ function NestedJson({ value }) {
 		children: str
 	});
 }
-function CellRenderer({ value, expandNested }) {
+var clampStyle = (lines) => ({
+	display: "-webkit-box",
+	WebkitLineClamp: lines,
+	WebkitBoxOrient: "vertical",
+	overflow: "hidden",
+	whiteSpace: "pre-wrap",
+	wordBreak: "break-word",
+	lineHeight: 1.45,
+	padding: "6px 0"
+});
+function PrettyJson({ value }) {
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+		className: "font-monospace small",
+		style: clampStyle(16),
+		children: JSON.stringify(value, null, 2) ?? ""
+	});
+}
+function CellRenderer({ value, expandNested, multiLine }) {
 	if (value === null || value === void 0) return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
 		className: "fst-italic",
 		style: { opacity: .55 },
@@ -85086,6 +85103,7 @@ function CellRenderer({ value, expandNested }) {
 			style: { opacity: .7 },
 			children: [String(obj.size), " bytes"]
 		});
+		if (multiLine) return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(PrettyJson, { value });
 		if (expandNested) return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(NestedJson, { value });
 		return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
 			className: "font-monospace small",
@@ -85102,6 +85120,7 @@ function CellRenderer({ value, expandNested }) {
 		});
 	}
 	if (Array.isArray(value)) {
+		if (multiLine) return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(PrettyJson, { value });
 		if (expandNested) return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(NestedJson, { value });
 		return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
 			className: "small",
@@ -85114,6 +85133,11 @@ function CellRenderer({ value, expandNested }) {
 		});
 	}
 	const str = String(value);
+	if (multiLine) return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+		title: str.length > 1e3 ? `${str.slice(0, 1e3)}…` : str,
+		style: clampStyle(12),
+		children: str
+	});
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
 		title: str,
 		style: {
@@ -85553,7 +85577,7 @@ function ExplorerView() {
 	const [recordWidth, setRecordWidth] = (0, import_react.useState)(440);
 	const [scannersWidth, setScannersWidth] = (0, import_react.useState)(360);
 	const [expandNested, setExpandNested] = (0, import_react.useState)(false);
-	const expandNestedRef = (0, import_react.useRef)(expandNested);
+	const [multiLine, setMultiLine] = (0, import_react.useState)(false);
 	const gridApi = (0, import_react.useRef)(null);
 	const sid = sessionId ?? explorerSession?.session_id ?? null;
 	(0, import_react.useEffect)(() => {
@@ -85618,30 +85642,36 @@ function ExplorerView() {
 		return [{
 			headerName: "#",
 			field: "__index",
-			width: 72,
+			initialWidth: 72,
 			pinned: "left",
-			sort: "asc",
+			initialSort: "asc",
 			sortable: true
 		}, ...columnNames.map((name) => ({
 			headerName: name,
 			field: name,
-			width: Math.min(600, Math.max(headerWidth(name), contentWidth(name))),
+			initialWidth: Math.min(600, Math.max(headerWidth(name), contentWidth(name))),
 			minWidth: 80,
 			sortable: true,
 			filter: true,
 			resizable: true,
+			wrapText: multiLine,
+			autoHeight: multiLine,
 			valueFormatter: () => "",
 			cellRenderer: (params) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(CellRenderer, {
 				value: params.value,
-				expandNested: expandNestedRef.current
+				expandNested,
+				multiLine
 			})
 		}))];
-	}, [columnKey, sampleRows]);
-	const toggleExpandNested = (0, import_react.useCallback)((on) => {
-		expandNestedRef.current = on;
-		setExpandNested(on);
-		gridApi.current?.refreshCells({ force: true });
-	}, []);
+	}, [
+		columnKey,
+		sampleRows,
+		expandNested,
+		multiLine
+	]);
+	(0, import_react.useEffect)(() => {
+		if (!multiLine) gridApi.current?.resetRowHeights();
+	}, [multiLine]);
 	const toggleColumn = (0, import_react.useCallback)((name, visible) => {
 		gridApi.current?.setColumnsVisible([name], visible);
 		setHiddenColumns((prev) => {
@@ -85716,11 +85746,27 @@ function ExplorerView() {
 									role: "switch",
 									id: "expand-nested-switch",
 									checked: expandNested,
-									onChange: (e) => toggleExpandNested(e.target.checked)
+									onChange: (e) => setExpandNested(e.target.checked)
 								}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("label", {
 									className: "form-check-label",
 									htmlFor: "expand-nested-switch",
 									children: "Expand nested"
+								})]
+							}),
+							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+								className: "form-check form-switch mb-0 me-1 small",
+								title: "Wrap long text and pretty-print structured fields across multiple lines",
+								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+									className: "form-check-input",
+									type: "checkbox",
+									role: "switch",
+									id: "multi-line-switch",
+									checked: multiLine,
+									onChange: (e) => setMultiLine(e.target.checked)
+								}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("label", {
+									className: "form-check-label",
+									htmlFor: "multi-line-switch",
+									children: "Multi-line"
 								})]
 							}),
 							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
