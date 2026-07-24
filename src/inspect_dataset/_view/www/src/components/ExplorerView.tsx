@@ -111,12 +111,35 @@ function NestedJson({ value }: { value: CellValue }) {
   );
 }
 
+// Wrapped multi-line content, clamped to a line count so one giant field
+// can't make a row fill the whole viewport (the record panel shows it all).
+const clampStyle = (lines: number): React.CSSProperties => ({
+  display: "-webkit-box",
+  WebkitLineClamp: lines,
+  WebkitBoxOrient: "vertical",
+  overflow: "hidden",
+  whiteSpace: "pre-wrap",
+  wordBreak: "break-word",
+  lineHeight: 1.45,
+  padding: "6px 0",
+});
+
+function PrettyJson({ value }: { value: CellValue }) {
+  return (
+    <span className="font-monospace small" style={clampStyle(16)}>
+      {JSON.stringify(value, null, 2) ?? ""}
+    </span>
+  );
+}
+
 function CellRenderer({
   value,
   expandNested,
+  multiLine,
 }: {
   value: CellValue;
   expandNested: boolean;
+  multiLine: boolean;
 }) {
   if (value === null || value === undefined) {
     return (
@@ -149,6 +172,7 @@ function CellRenderer({
         </span>
       );
     }
+    if (multiLine) return <PrettyJson value={value} />;
     if (expandNested) return <NestedJson value={value} />;
     return (
       <span
@@ -168,6 +192,7 @@ function CellRenderer({
     );
   }
   if (Array.isArray(value)) {
+    if (multiLine) return <PrettyJson value={value} />;
     if (expandNested) return <NestedJson value={value} />;
     return (
       <span className="small" style={{ opacity: 0.7 }}>
@@ -176,6 +201,16 @@ function CellRenderer({
     );
   }
   const str = String(value);
+  if (multiLine) {
+    return (
+      <span
+        title={str.length > 1000 ? `${str.slice(0, 1000)}…` : str}
+        style={clampStyle(12)}
+      >
+        {str}
+      </span>
+    );
+  }
   return (
     <span
       title={str}
@@ -672,9 +707,7 @@ export function ExplorerView() {
   const [recordWidth, setRecordWidth] = useState(440);
   const [scannersWidth, setScannersWidth] = useState(360);
   const [expandNested, setExpandNested] = useState(false);
-  // Read by cell renderers via ref so colDefs stay referentially stable
-  // (invalidating them on toggle would reset manual column resizes).
-  const expandNestedRef = useRef(expandNested);
+  const [multiLine, setMultiLine] = useState(false);
   const gridApi = useRef<GridApi | null>(null);
 
   const sid = sessionId ?? explorerSession?.session_id ?? null;
@@ -751,8 +784,11 @@ export function ExplorerView() {
   // Size each column at least to fit its header text, widened toward the
   // content's typical width (90th percentile of the sampled rows' display
   // length) up to a 600px cap, so text-heavy datasets get readable columns
-  // while wide datasets still scroll horizontally. Memoised so user resizes
-  // and visibility toggles (applied imperatively) aren't reset on re-render.
+  // while wide datasets still scroll horizontally.
+  //
+  // Widths/sort use the initial* colDef properties: they only apply when a
+  // column is first created, so the display-mode toggles below can swap in
+  // new colDefs without resetting the user's manual resizes or sort.
   const colDefs: ColDef<ExploreRow>[] = useMemo(() => {
     const headerWidth = (name: string) =>
       Math.min(560, Math.max(120, name.length * 8.5 + 56));
@@ -780,38 +816,42 @@ export function ExplorerView() {
       {
         headerName: "#",
         field: "__index",
-        width: 72,
+        initialWidth: 72,
         pinned: "left" as const,
-        sort: "asc" as const,
+        initialSort: "asc" as const,
         sortable: true,
       },
       ...columnNames.map((name) => ({
         headerName: name,
         field: name as keyof ExploreRow & string,
-        width: Math.min(600, Math.max(headerWidth(name), contentWidth(name))),
+        initialWidth: Math.min(
+          600,
+          Math.max(headerWidth(name), contentWidth(name)),
+        ),
         minWidth: 80,
         sortable: true,
         filter: true,
         resizable: true,
+        wrapText: multiLine,
+        autoHeight: multiLine,
         valueFormatter: () => "",
         cellRenderer: (params: ICellRendererParams<ExploreRow>) => (
           <CellRenderer
             value={params.value as CellValue}
-            expandNested={expandNestedRef.current}
+            expandNested={expandNested}
+            multiLine={multiLine}
           />
         ),
       })),
     ];
     // columnKey captures the (ordered) column set; schema identity is stable.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [columnKey, sampleRows]);
+  }, [columnKey, sampleRows, expandNested, multiLine]);
 
-  const toggleExpandNested = useCallback((on: boolean) => {
-    expandNestedRef.current = on;
-    setExpandNested(on);
-    // Renderers read the ref, so force re-render of already-drawn cells.
-    gridApi.current?.refreshCells({ force: true });
-  }, []);
+  // Rows revert to the fixed height when auto-height is switched off.
+  useEffect(() => {
+    if (!multiLine) gridApi.current?.resetRowHeights();
+  }, [multiLine]);
 
   const toggleColumn = useCallback((name: string, visible: boolean) => {
     gridApi.current?.setColumnsVisible([name], visible);
@@ -882,10 +922,26 @@ export function ExplorerView() {
               role="switch"
               id="expand-nested-switch"
               checked={expandNested}
-              onChange={(e) => toggleExpandNested(e.target.checked)}
+              onChange={(e) => setExpandNested(e.target.checked)}
             />
             <label className="form-check-label" htmlFor="expand-nested-switch">
               Expand nested
+            </label>
+          </div>
+          <div
+            className="form-check form-switch mb-0 me-1 small"
+            title="Wrap long text and pretty-print structured fields across multiple lines"
+          >
+            <input
+              className="form-check-input"
+              type="checkbox"
+              role="switch"
+              id="multi-line-switch"
+              checked={multiLine}
+              onChange={(e) => setMultiLine(e.target.checked)}
+            />
+            <label className="form-check-label" htmlFor="multi-line-switch">
+              Multi-line
             </label>
           </div>
           <button
