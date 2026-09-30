@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import dataclasses
 import re
 from datetime import UTC, datetime
 from pathlib import Path
@@ -308,11 +309,18 @@ def scan(
     elif is_task:
         console.print(f"Loading inspect_ai task [bold]{dataset}[/bold]...")
         records, fields = load_task_from_spec(dataset, limit=limit)
-        # Allow field overrides even on the task path
-        if question_field or answer_field or id_field:
-            detected_group, task_scorers = fields.group, fields.scorers
-            fields = resolve_fields(records, question_field, answer_field, id_field, image_field)
-            fields.group, fields.scorers = detected_group, task_scorers
+        # Overrides replace only the roles given, so the rest of the task's field map stays
+        overrides = {
+            role: value
+            for role, value in (
+                ("question", question_field),
+                ("answer", answer_field),
+                ("id", id_field),
+                ("image", image_field),
+            )
+            if value
+        }
+        fields = dataclasses.replace(fields, **overrides)
     else:
         from datasets.exceptions import DatasetNotFoundError
 
