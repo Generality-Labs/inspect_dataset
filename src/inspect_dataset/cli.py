@@ -279,6 +279,8 @@ def scan(
         resolved_split = None
         if question_field or answer_field or id_field:
             fields = resolve_fields(records, question_field, answer_field, id_field, image_field)
+        elif image_field:
+            fields.image = image_field
     elif is_task:
         console.print(f"Loading inspect_ai task [bold]{dataset}[/bold]...")
         records, fields = load_task_from_spec(dataset, limit=limit)
@@ -447,14 +449,15 @@ def list_scanners() -> None:
     table = Table(title="Registered Scanners")
     table.add_column("Scanner", style="bold")
     table.add_column("Type")
+    table.add_column("Requires")
     table.add_column("Description")
 
     for s in BUILTIN_SCANNERS:
-        table.add_row(s.name, "static", s.description)
+        table.add_row(s.name, "static", ", ".join(s.requires), s.description)
     for name, factory in LLM_SCANNER_FACTORIES.items():
         # Build a temporary instance to read its description
-        desc = factory("_placeholder").description
-        table.add_row(name, "llm", desc)
+        llm = factory("_placeholder")
+        table.add_row(name, "llm", ", ".join(llm.requires), llm.description)
 
     console.print(table)
 

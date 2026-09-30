@@ -2,7 +2,10 @@
 
 import base64
 
+import pytest
+
 from inspect_dataset._types import FieldMap
+from inspect_dataset.scanner import ScannerNotApplicable, run_scanners
 from inspect_dataset.scanners.image_mime_type import (
     detect_mime_from_bytes,
     image_mime_type,
@@ -120,10 +123,16 @@ def test_mismatch_png_declared_jpeg_actual():
     assert findings[0].metadata["actual_mime"] == "image/jpeg"
 
 
-def test_no_image_field_no_findings():
-    """Scanner returns nothing when FieldMap has no image field."""
+def test_no_image_field_not_applicable():
     records = [{"q": "What?", "a": "Yes"}]
-    assert image_mime_type(records, FIELDS_NO_IMAGE) == []
+    run = run_scanners(records, FIELDS_NO_IMAGE, [image_mime_type])
+    assert run.findings == []
+    assert run.scanner_status["image_mime_type"]["status"] == "not_applicable"
+
+
+def test_direct_call_without_image_field_raises_not_applicable():
+    with pytest.raises(ScannerNotApplicable, match="no image field"):
+        image_mime_type([{"q": "What?", "a": "Yes"}], FIELDS_NO_IMAGE)
 
 
 def test_none_image_skipped():

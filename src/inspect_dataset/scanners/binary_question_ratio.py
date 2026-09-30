@@ -54,6 +54,7 @@ def _scan(records: list[Record], fields: FieldMap) -> list[Finding]:
 binary_question_ratio = ScannerDef(
     name="binary_question_ratio",
     fn=_scan,
+    requires="answer",
     description=(
         f"Flag datasets where more than {_FLAG_THRESHOLD:.0%} of answers are yes/no. "
         "High binary ratios mean a majority-class baseline can score well without "

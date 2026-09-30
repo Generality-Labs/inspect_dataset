@@ -50,6 +50,7 @@ def _scan(records: list[Record], fields: FieldMap) -> list[Finding]:
 answer_distribution = ScannerDef(
     name="answer_distribution",
     fn=_scan,
+    requires="answer",
     description=(
         f"Flag datasets where a single answer accounts for ≥{_IMBALANCE_THRESHOLD:.0%} "
         "of all samples (class imbalance)."

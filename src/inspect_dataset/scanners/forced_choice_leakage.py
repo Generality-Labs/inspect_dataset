@@ -164,6 +164,7 @@ def _scan(records: list[Record], fields: FieldMap) -> list[Finding]:
 forced_choice_leakage = ScannerDef(
     name="forced_choice_leakage",
     fn=_scan,
+    requires="answer",
     description=(
         "Flag questions that offer explicit options via 'or' where the answer "
         "is one of those options (e.g. 'is this an MRI or CT scan?' → 'mri'). "
