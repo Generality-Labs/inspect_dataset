@@ -233,3 +233,30 @@ def test_long_option_next_to_or_flagged():
     after = "Mengistu was accused of infiltrating into Somali"
     q = f"Question: What event happened first, separatist struck government outposts or {after}?"
     assert len(forced_choice_leakage(rec(q, after), FIELDS)) == 1
+
+
+def test_head_noun_rule_skips_long_phrases():
+    # The last words of a long phrase after "or" are not an option.
+    q = "is the heart size in this image smaller or larger than if the image was taken ap?"
+    assert forced_choice_leakage(rec(q, "taken ap"), FIELDS) == []
+    assert len(forced_choice_leakage(rec(q, "smaller"), FIELDS)) == 1
+
+
+def test_number_with_comma_stays_whole():
+    q = "Was the attendance 1,000 or 2,000?"
+    assert len(forced_choice_leakage(rec(q, "1,000"), FIELDS)) == 1
+
+
+def test_newline_ends_sentence():
+    prompt = "Title: Cats or dogs\nQuestion: Which pet do most people own?"
+    assert forced_choice_leakage(rec(prompt, "dogs"), FIELDS) == []
+
+
+def test_quoted_question_flagged():
+    assert len(forced_choice_leakage(rec('"Is it red or blue?"', "blue"), FIELDS)) == 1
+    assert len(forced_choice_leakage(rec("“Is it red or blue?”", "red"), FIELDS)) == 1
+
+
+def test_either_starts_the_option():
+    f = forced_choice_leakage(rec("Should the answer be either yes or no?", "yes"), FIELDS)
+    assert f[0].metadata["options"] == ["yes", "no"]
