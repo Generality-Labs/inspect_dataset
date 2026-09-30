@@ -103,8 +103,9 @@ def _scan_with_image(records: list[Record], fields: FieldMap) -> list[Finding]:
                     )
                 )
 
-        # Only emit question-reuse findings when images genuinely differ
-        unique_img_keys = {k for k in img_keys if k is not None}
+        # Only emit question-reuse findings when images genuinely differ. No image (None)
+        # counts as its own image, so a question asked with and without one is reuse.
+        unique_img_keys = set(img_keys)
         if len(unique_img_keys) <= 1:
             continue  # all same image — already handled above as exact duplicates
 

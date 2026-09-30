@@ -185,3 +185,18 @@ def test_image_lists_differing_in_one_image_are_question_reuse():
     findings = duplicate_questions(data, IMG_FIELDS)
     assert [f.metadata["duplicate_type"] for f in findings] == ["question_reuse"] * 2
     assert all(f.severity == "low" for f in findings)
+
+
+def test_same_question_with_and_without_an_image_is_question_reuse():
+    # A task that mixes image and text-only samples gives the text-only ones an empty list
+    data = [img_rec("what is 2+2?", "4", [IMG1]), img_rec("what is 2+2?", "4", [])]
+    findings = duplicate_questions(data, IMG_FIELDS)
+    assert [f.metadata["duplicate_type"] for f in findings] == ["question_reuse"] * 2
+    assert all(f.severity == "medium" for f in findings)
+
+
+def test_missing_image_next_to_an_image_is_question_reuse():
+    data = [img_rec("is this normal?", "yes", IMG1), {"q": "is this normal?", "a": "no"}]
+    findings = duplicate_questions(data, IMG_FIELDS)
+    assert [f.metadata["duplicate_type"] for f in findings] == ["question_reuse"] * 2
+    assert all(f.severity == "low" for f in findings)
