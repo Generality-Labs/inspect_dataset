@@ -201,3 +201,58 @@ def test_summary_describes_the_join():
         "id_column": "id",
         "loads": [{"path": "owner/ds", "split": "test"}],
     }
+
+
+# ---------------------------------------------------------------------------
+# scan_summary.json and the report
+# ---------------------------------------------------------------------------
+
+_TASK_FILE = """
+from inspect_ai import Task, task
+from inspect_ai.dataset import Sample, json_dataset
+
+
+def to_sample(record):
+    return Sample(id=record["qid"], input=record["question"], target=record["answer"])
+
+
+@task
+def rows():
+    return Task(dataset=json_dataset({path!r}, to_sample))
+"""
+
+
+def _scan_task(tmp_path: Path, *extra: str):
+    from click.testing import CliRunner
+
+    from inspect_dataset.cli import cli
+
+    task_file = tmp_path / "rows_task.py"
+    task_file.write_text(_TASK_FILE.format(path=str(_jsonl(tmp_path))))
+    out = tmp_path / "findings"
+    result = CliRunner().invoke(cli, ["scan", f"{task_file}@rows", "-o", str(out), *extra])
+    return result, out
+
+
+def test_cli_task_scan_records_the_join_in_the_summary(tmp_path: Path):
+    result, out = _scan_task(tmp_path, "--scanners", "answer_length")
+    assert result.exit_code == 0, result.output
+    summary = json.loads((out / "scan_summary.json").read_text())
+    assert summary["source"] == {
+        "field": SOURCE_FIELD,
+        "joined": 3,
+        "total": 3,
+        "joined_by_record": 3,
+        "joined_by_id": 0,
+        "id_column": None,
+        "loads": [],
+    }
+    assert "Source rows: 3 of 3 samples" in result.output
+    assert "**Source rows:** 3 of 3 samples" in (out / "REPORT.md").read_text()
+
+
+def test_samples_json_does_not_write_the_raw_rows(tmp_path: Path):
+    result, out = _scan_task(tmp_path, "--scanners", "answer_length")
+    assert result.exit_code == 0, result.output
+    samples = json.loads((out / "samples.json").read_text())
+    assert all(SOURCE_FIELD not in s and "explanation" not in json.dumps(s) for s in samples)

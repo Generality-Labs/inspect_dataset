@@ -9,6 +9,7 @@ import click
 from dotenv import load_dotenv
 from rich.console import Console
 
+from inspect_dataset._source import SourceInfo
 from inspect_dataset.loader import (
     DatasetSelectionError,
     is_task_spec,
@@ -296,6 +297,7 @@ def scan(
     resolved_split: str | None = split
     split_defaulted: bool | None = None
     config_defaulted: bool | None = None
+    source_info: SourceInfo | None = None
 
     if is_local:
         dataset = str(Path(dataset).resolve())
@@ -308,7 +310,8 @@ def scan(
             fields.image = image_field
     elif is_task:
         console.print(f"Loading inspect_ai task [bold]{dataset}[/bold]...")
-        records, fields = load_task_from_spec(dataset, limit=limit)
+        source_info = SourceInfo()
+        records, fields = load_task_from_spec(dataset, limit=limit, source_info=source_info)
         # Overrides replace only the roles given, so the rest of the task's field map stays
         overrides = {
             role: value
@@ -432,6 +435,7 @@ def scan(
 
     run.split_defaulted = split_defaulted
     run.config_defaulted = config_defaulted
+    run.source = source_info.to_summary() if source_info is not None else None
 
     print_report(run, console=console)
 

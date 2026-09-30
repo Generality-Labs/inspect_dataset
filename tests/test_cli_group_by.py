@@ -87,7 +87,7 @@ def test_group_by_unknown_field_is_an_error(tmp_path, monkeypatch):
 
 
 def _run_task(tmp_path: Path, monkeypatch, extra_args: list[str], group: str | None):
-    def fake_load_task_from_spec(spec, limit=None):
+    def fake_load_task_from_spec(spec, limit=None, source_info=None):
         return [dict(r) for r in _RECORDS], FieldMap(question="q", answer="a", id=None, group=group)
 
     monkeypatch.setattr(cli_mod, "load_task_from_spec", fake_load_task_from_spec)
