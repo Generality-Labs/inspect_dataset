@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import importlib.util
 import json
 from pathlib import Path
 from typing import Any
@@ -389,6 +390,45 @@ def _find_task_in_module(module: Any, hint: str) -> Any:
         f"Module {module.__name__!r} has no @task-decorated callable named {hint!r} "
         f"and no unique @task callable was found."
     )
+
+
+def _module_exists(name: str) -> bool:
+    try:
+        return importlib.util.find_spec(name) is not None
+    except (ImportError, ValueError):
+        # A parent that is missing or not a package, or an invalid module name.
+        return False
+
+
+def _registry_has_task(name: str) -> bool:
+    try:
+        from inspect_ai._util.registry import registry_lookup
+    except ImportError:
+        return False
+    # Only loads the entry points registered under the owner's package name.
+    return registry_lookup("task", name) is not None
+
+
+def is_task_spec(spec: str) -> bool:
+    """Return whether a DATASET argument names an inspect_ai task.
+
+    A spec containing ``@`` is always a task. An ``owner/name`` spec is a task
+    only when it resolves as one: the module ``owner.name`` exists, or the
+    inspect_ai registry has a task named ``owner/name`` (``inspect_evals/arc_challenge``
+    is defined in ``inspect_evals.arc``). Anything else is a HuggingFace dataset
+    path. The owner alone does not decide, because ``google`` and ``openai`` are
+    importable wherever inspect_ai is and also own HuggingFace datasets.
+
+    Callers should rule out a local directory first.
+    """
+    if "@" in spec:
+        return True
+    if "/" not in spec:
+        return False
+    owner, name = spec.split("/", 1)
+    if not _module_exists(owner):
+        return False
+    return _module_exists(f"{owner}.{name}") or _registry_has_task(spec)
 
 
 def load_task_from_spec(spec: str, limit: int | None = None) -> tuple[list[Record], FieldMap]:
