@@ -126,7 +126,8 @@ def cli() -> None:
     default=None,
     help=(
         "Column name for images. Used by duplicate_questions to distinguish "
-        "same-question/different-image pairs from true duplicates."
+        "same-question/different-image pairs from true duplicates, and by "
+        "image_mime_type. Task scans set it to 'images' when the input has images."
     ),
 )
 @click.option(
@@ -375,6 +376,7 @@ def scan(
         f"answer=[bold]{fields.answer}[/bold]"
         + (f".[bold]{fields.answer_subfield}[/bold]" if fields.answer_subfield else "")
         + (f"  id=[bold]{fields.id}[/bold]" if fields.id else "")
+        + (f"  image=[bold]{fields.image}[/bold]" if fields.image else "")
     )
 
     all_scanners = scanner_list + llm_scanners

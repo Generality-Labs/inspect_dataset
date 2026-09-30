@@ -185,7 +185,7 @@ The names are `"answer"` (at least one row has a non-empty answer), `"image"` (a
 
 ## inspect_ai tasks
 
-A task spec such as `inspect_evals/drop` loads the task's samples. Each record has `input` (the text of the last user message), `target` (the first target string), `targets` (every target string, as a list) and `id`, plus `choices` when the sample has them and every key of the sample's metadata. `input`, `target` and `id` are the question, answer and id fields. When any sample has choices, scanners find them through `FieldMap.choices`, which lets them read a letter target as the choice it names. To measure every alternative answer of a list target, pass `--answer-field targets --answer-subfield '*'`.
+A task spec such as `inspect_evals/drop` loads the task's samples. Each record has `input` (the text of the last user message), `target` (the first target string), `targets` (every target string, as a list) and `id`, plus `choices` when the sample has them and every key of the sample's metadata. `input`, `target` and `id` are the question, answer and id fields. When any sample has choices, scanners find them through `FieldMap.choices`, which lets them read a letter target as the choice it names. When any sample's input has images, `images` holds every image from all its messages and is the image field, so `duplicate_questions` compares images and `image_mime_type` checks them. Image files are read into `{"bytes": ..., "path": ...}` values, the shape of a HuggingFace image column. URLs keep only their `path`, and data URIs stay as strings. To measure every string of a list target, such as DROP's alternative answers, pass `--answer-field targets --answer-subfield '*'`.
 
 ## Integration with inspect-scout
 

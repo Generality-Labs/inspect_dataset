@@ -21,6 +21,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `targets` in task-mode records: every target string of the sample, where `target` holds only the first. Pass `--answer-field targets --answer-subfield '*'` to measure every string of a list target, such as DROP's alternative answers or MBPP's test cases ([#37](https://github.com/Generality-Labs/inspect_dataset/issues/37)).
 - `FieldMap.choices`: the column holding each sample's answer choices. Task mode sets it to `choices` when any sample has choices, so scanners can resolve a letter target such as `"B"` to the text of the choice it names ([#37](https://github.com/Generality-Labs/inspect_dataset/issues/37)).
 - `duplicate_questions` and `image_mime_type` accept an image field that holds a list of images. `duplicate_questions` compares the whole list, and `image_mime_type` checks each image and records its `image_index` in the finding ([#37](https://github.com/Generality-Labs/inspect_dataset/issues/37)).
+- `images` in task-mode records: every image in the sample input, from all its messages. Task mode sets it as the image field when any sample has images, so `duplicate_questions` tells apart samples that share a question but not an image, and `image_mime_type` now runs on tasks. The viewer shows these images ([#37](https://github.com/Generality-Labs/inspect_dataset/issues/37)).
 
 ### Changed
 

@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import base64
+from pathlib import Path
+
 import pytest
 from inspect_ai import Task
 from inspect_ai.dataset import Sample
+from inspect_ai.model import ChatMessageSystem, ChatMessageUser, ContentImage, ContentText
 from inspect_ai.scorer import Score, accuracy, choice, match, scorer
 
 from inspect_dataset.loader import (
@@ -15,6 +19,8 @@ from inspect_dataset.loader import (
 )
 from inspect_dataset.scanners._answers import answer_texts, resolved_answer
 from inspect_dataset.scanners.answer_length import answer_length
+from inspect_dataset.scanners.duplicate_questions import duplicate_questions
+from inspect_dataset.scanners.image_mime_type import image_mime_type
 
 # ---------------------------------------------------------------------------
 # Helpers — minimal stand-ins for inspect_ai objects
@@ -31,6 +37,12 @@ class _ContentBlock:
     def __init__(self, type: str, text: str) -> None:
         self.type = type
         self.text = text
+
+
+class _ContentImage:
+    def __init__(self, image: str) -> None:
+        self.type = "image"
+        self.image = image
 
 
 class _Sample:
@@ -302,6 +314,117 @@ def test_multiple_samples_all_loaded():
     records, _ = load_inspect_task(task)
     assert len(records) == 3
     assert [r["id"] for r in records] == ["s1", "s2", "s3"]
+
+
+# ---------------------------------------------------------------------------
+# load_inspect_task — images from the sample input
+# ---------------------------------------------------------------------------
+
+PNG_BYTES = b"\x89PNG\r\n\x1a\n" + b"\x00" * 24
+JPEG_BYTES = b"\xff\xd8\xff\xe0" + b"\x00" * 24
+PNG_URI = "data:image/png;base64," + base64.b64encode(PNG_BYTES).decode()
+
+
+def _user(*parts: object) -> _Msg:
+    msg = _Msg("user", "")
+    msg.content = list(parts)  # type: ignore[assignment]
+    return msg
+
+
+def test_image_file_path_is_read_into_bytes(tmp_path: Path):
+    path = tmp_path / "scan.png"
+    path.write_bytes(PNG_BYTES)
+    task = _make_task(_Sample([_user(_ContentBlock("text", "what?"), _ContentImage(str(path)))]))
+    records, fields = load_inspect_task(task)
+    assert records[0]["images"] == [{"bytes": PNG_BYTES, "path": str(path)}]
+    assert fields.image == "images"
+
+
+def test_missing_image_file_keeps_its_path(tmp_path: Path):
+    path = str(tmp_path / "gone.png")
+    records, _ = load_inspect_task(_make_task(_Sample([_user(_ContentImage(path))])))
+    assert records[0]["images"] == [{"bytes": None, "path": path}]
+
+
+def test_data_uri_image_is_kept_as_is():
+    records, _ = load_inspect_task(_make_task(_Sample([_user(_ContentImage(PNG_URI))])))
+    assert records[0]["images"] == [PNG_URI]
+
+
+def test_url_image_keeps_the_url_as_its_path():
+    url = "https://example.com/x.jpg"
+    records, _ = load_inspect_task(_make_task(_Sample([_user(_ContentImage(url))])))
+    assert records[0]["images"] == [{"bytes": None, "path": url}]
+
+
+def test_images_are_collected_from_every_message_in_order():
+    msgs = [
+        _user(_ContentImage("https://example.com/1.png"), _ContentBlock("text", "first")),
+        _Msg("assistant", "noted"),
+        {"role": "user", "content": [{"type": "image", "image": PNG_URI}]},
+        _user(
+            _ContentBlock("text", "which is larger?"), _ContentImage("https://example.com/3.png")
+        ),
+    ]
+    records, _ = load_inspect_task(_make_task(_Sample(msgs)))
+    assert records[0]["images"] == [
+        {"bytes": None, "path": "https://example.com/1.png"},
+        PNG_URI,
+        {"bytes": None, "path": "https://example.com/3.png"},
+    ]
+    assert records[0]["input"] == "which is larger?"
+
+
+def test_samples_without_images_get_an_empty_list_when_others_have_them():
+    task = _make_task(_Sample("text only"), _Sample([_user(_ContentImage(PNG_URI))]))
+    records, fields = load_inspect_task(task)
+    assert records[0]["images"] == []
+    assert records[1]["images"] == [PNG_URI]
+    assert fields.image == "images"
+
+
+def test_image_field_unset_without_images():
+    task = _make_task(_Sample("text only"), _Sample([_user(_ContentBlock("text", "q"))]))
+    records, fields = load_inspect_task(task)
+    assert fields.image is None
+    assert all("images" not in r for r in records)
+
+
+def test_real_inspect_sample_images_feed_the_image_scanners(tmp_path: Path):
+    mislabelled = tmp_path / "chart.jpg"
+    mislabelled.write_bytes(PNG_BYTES)
+    photo = tmp_path / "photo.jpg"
+    photo.write_bytes(JPEG_BYTES)
+
+    def sample(sid: str, image: Path) -> Sample:
+        return Sample(
+            input=[
+                ChatMessageSystem(content="Answer briefly."),
+                ChatMessageUser(
+                    content=[ContentText(text="What is shown?"), ContentImage(image=str(image))]
+                ),
+                ChatMessageUser(
+                    content=[ContentImage(image=PNG_URI), ContentText(text="And here?")]
+                ),
+            ],
+            target="a chart",
+            id=sid,
+        )
+
+    task = Task(dataset=[sample("s1", mislabelled), sample("s2", photo), sample("s3", photo)])
+    records, fields = load_inspect_task(task)
+    assert fields.image == "images"
+    assert records[0]["input"] == "And here?"
+    assert records[0]["images"] == [{"bytes": PNG_BYTES, "path": str(mislabelled)}, PNG_URI]
+
+    mime = image_mime_type(records, fields)
+    assert [(f.sample_id, f.metadata["image_index"]) for f in mime] == [("s1", 0)]
+    assert mime[0].metadata["declared_mime"] == "image/jpeg"
+    assert mime[0].metadata["actual_mime"] == "image/png"
+
+    dups = duplicate_questions(records, fields)
+    exact = sorted(f.sample_id for f in dups if f.metadata["duplicate_type"] == "exact")
+    assert exact == ["s2", "s3"]
 
 
 # ---------------------------------------------------------------------------

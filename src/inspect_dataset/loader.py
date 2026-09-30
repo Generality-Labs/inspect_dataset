@@ -336,15 +336,56 @@ def _target_list(target: Any) -> list[str]:
     return [str(target)] if target is not None else []
 
 
+def _part(obj: Any, name: str) -> Any:
+    """An attribute of an inspect_ai message or content part, which may also be a dict."""
+    return obj.get(name) if isinstance(obj, dict) else getattr(obj, name, None)
+
+
+def _input_images(input: Any) -> list[Any]:
+    """Every image in an inspect_ai Sample.input, from all messages, in order.
+
+    Images take the shapes HuggingFace ``Image(decode=False)`` gives, so the image
+    scanners read them as they read an HF image column. A file path becomes
+    ``{"bytes": <file bytes>, "path": path}``, with ``None`` bytes when the file is
+    missing. A URL becomes ``{"bytes": None, "path": url}``. A data URI is kept as
+    the string.
+    """
+    if not isinstance(input, list):
+        return []
+    images: list[Any] = []
+    for msg in input:
+        content = _part(msg, "content")
+        if not isinstance(content, list):
+            continue
+        for part in content:
+            source = _part(part, "image") if _part(part, "type") == "image" else None
+            if isinstance(source, str) and source:
+                images.append(_image_value(source))
+    return images
+
+
+def _image_value(source: str) -> Any:
+    if source.startswith("data:"):
+        return source
+    if source.startswith(("http://", "https://")):
+        return {"bytes": None, "path": source}
+    try:
+        return {"bytes": Path(source).read_bytes(), "path": source}
+    except (OSError, ValueError):
+        return {"bytes": None, "path": source}
+
+
 def load_inspect_task(task_or_fn: Any, limit: int | None = None) -> tuple[list[Record], FieldMap]:
     """Load records from an inspect_ai Task object or task function.
 
     Converts each ``inspect_ai.Sample`` to a plain ``Record`` dict using the
     fixed field mapping: ``input`` → question, ``target`` → answer, ``id`` → id.
     ``target`` is the first target string and ``targets`` holds every target
-    string. ``choices`` and ``metadata`` are preserved in the record for
-    scanners that can use them. ``files`` is stored under ``__files__`` for
-    future use by the view server.
+    string. ``images`` holds every image in the input (see ``_input_images``),
+    and is an empty list on samples without one when any sample has images.
+    ``choices`` and ``metadata`` are preserved in the record for scanners that
+    can use them. ``files`` is stored under ``__files__`` for future use by the
+    view server.
 
     Returns a ``(records, fields)`` tuple — the ``FieldMap`` is pre-set so no
     auto-detection is needed. ``fields.group`` is set when the metadata has one obvious
@@ -357,6 +398,7 @@ def load_inspect_task(task_or_fn: Any, limit: int | None = None) -> tuple[list[R
 
     records: list[Record] = []
     metadata_keys: set[str] = set()
+    sample_images: list[list[Any]] = []
     has_choices = False
     for sample in dataset:
         record: Record = {
@@ -368,6 +410,7 @@ def load_inspect_task(task_or_fn: Any, limit: int | None = None) -> tuple[list[R
         if sample.choices:
             record["choices"] = sample.choices
             has_choices = True
+        sample_images.append(_input_images(sample.input))
         if sample.metadata:
             # Merge metadata into record so scanners can access it directly
             for k, v in sample.metadata.items():
@@ -380,11 +423,17 @@ def load_inspect_task(task_or_fn: Any, limit: int | None = None) -> tuple[list[R
         if limit is not None and len(records) >= limit:
             break
 
+    has_images = any(sample_images)
+    if has_images:
+        for record, images in zip(records, sample_images, strict=True):
+            record["images"] = images
+
     fields = FieldMap(
         question="input",
         answer="target",
         id="id",
         group=detect_group_field(records, metadata_keys),
+        image="images" if has_images else None,
         choices="choices" if has_choices else None,
         scorers=_scorer_names(task),
     )

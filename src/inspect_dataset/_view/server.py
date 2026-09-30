@@ -262,25 +262,50 @@ def _compute_schema(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
 def _record_to_json_safe(record: dict[str, Any]) -> dict[str, Any]:
     """Convert a record to a JSON-serialisable dict.
 
-    Image bytes dicts are replaced with a placeholder so the frontend
-    knows an image is present without transmitting the raw bytes here.
-    Use the dedicated /record/:idx endpoint to get actual image data.
+    Images, including those inside lists, are replaced with a placeholder so
+    the frontend knows an image is present without transmitting the raw bytes
+    here. Use the dedicated /record/:idx endpoint to get actual image data.
     """
-    result: dict[str, Any] = {}
+    return {key: _json_safe_value(val) for key, val in record.items() if not key.startswith("__")}
+
+
+def _json_safe_value(val: Any) -> Any:
+    if isinstance(val, dict) and isinstance(val.get("bytes"), bytes):
+        return {"__type": "image", "path": val.get("path") or ""}
+    if isinstance(val, str) and val.startswith("data:image/"):
+        return {"__type": "image", "path": val.split(";", 1)[0].split(",", 1)[0]}
+    if isinstance(val, bytes):
+        return {"__type": "bytes", "size": len(val)}
+    if isinstance(val, list | tuple):
+        return [_json_safe_value(v) for v in val]
+    try:
+        json.dumps(val)
+        return val
+    except (TypeError, ValueError):
+        return str(val)
+
+
+def _image_data_url(val: Any) -> str | None:
+    """A data URL for an HF image dict with bytes or a data URI string, else None."""
+    if isinstance(val, dict) and isinstance(val.get("bytes"), bytes) and val["bytes"]:
+        return _to_data_url(val["bytes"], val.get("path") or "")
+    if isinstance(val, str) and val.startswith("data:image/"):
+        return val
+    return None
+
+
+def _record_images(record: dict[str, Any]) -> list[dict[str, str]]:
+    """Every image in a record with data to show, including each image in a list field."""
+    images: list[dict[str, str]] = []
     for key, val in record.items():
         if key.startswith("__"):
             continue
-        if isinstance(val, dict) and isinstance(val.get("bytes"), bytes):
-            result[key] = {"__type": "image", "path": val.get("path") or ""}
-        elif isinstance(val, bytes):
-            result[key] = {"__type": "bytes", "size": len(val)}
-        else:
-            try:
-                json.dumps(val)
-                result[key] = val
-            except (TypeError, ValueError):
-                result[key] = str(val)
-    return result
+        items = list(enumerate(val)) if isinstance(val, list | tuple) else [(None, val)]
+        for i, item in items:
+            url = _image_data_url(item)
+            if url is not None:
+                images.append({"field": key if i is None else f"{key}[{i}]", "data_url": url})
+    return images
 
 
 def create_app(
@@ -474,17 +499,8 @@ async def handle_sample(request: web.Request) -> web.Response:
     if records is not None and 0 <= idx < len(records):
         record = records[idx]
 
-        # HF image fields arrive as {"bytes": b"...", "path": "..."}
-        for key, val in record.items():
-            if key.startswith("__"):
-                continue
-            if isinstance(val, dict) and isinstance(val.get("bytes"), bytes) and val["bytes"]:
-                result["images"].append(
-                    {
-                        "field": key,
-                        "data_url": _to_data_url(val["bytes"], val.get("path") or ""),
-                    }
-                )
+        # HF image fields arrive as {"bytes": b"...", "path": "..."}; task images as a list
+        result["images"].extend(_record_images(record))
 
         # Extraction-cache artifacts (local annotation datasets): page image,
         # per-tool text outputs, and the markdown body's line offset so the
@@ -831,17 +847,7 @@ async def handle_explore_record(
     record = records[idx]
     safe = _record_to_json_safe(record)
 
-    images = []
-    for key, val in record.items():
-        if key.startswith("__"):
-            continue
-        if isinstance(val, dict) and isinstance(val.get("bytes"), bytes) and val["bytes"]:
-            images.append(
-                {
-                    "field": key,
-                    "data_url": _to_data_url(val["bytes"], val.get("path") or ""),
-                }
-            )
+    images = _record_images(record)
 
     files_map: dict[str, Any] = record.get("__files__") or {}
     files = []

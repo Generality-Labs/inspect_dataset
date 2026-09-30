@@ -208,7 +208,8 @@ duplicate_questions = ScannerDef(
     fn=_scan,
     description=(
         "Flag questions that appear more than once. "
-        "With --image-field: exact (question+image) duplicates are HIGH; "
+        "With an image field (--image-field, or the input images of a task): "
+        "exact (question+image) duplicates are HIGH; "
         "same question across different images with same answer is MEDIUM "
         "(image-independent question); different answers is LOW (standard VQA reuse). "
         "Without --image-field: same-answer duplicates are HIGH, different-answer are LOW."
