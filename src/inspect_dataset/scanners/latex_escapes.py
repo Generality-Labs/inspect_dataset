@@ -74,15 +74,24 @@ _CONTEXT = 20
 _MAX_IN_EXPLANATION = 3
 
 
+def _command_name(m: re.Match[str]) -> str | None:
+    escape, letters = m.group(1), m.group(2)
+    if escape in _LINE_BREAKS and len(letters) < 2:
+        return None
+    name = _ESCAPE_LETTERS[escape] + letters
+    return name if name in _COMMANDS else None
+
+
 def _hits(text: str) -> list[dict[str, Any]]:
     hits: list[dict[str, Any]] = []
+    # Finding math regions is slow on text with many unclosed \( or \[, so
+    # skip it when no collapsed command could be inside one.
+    if not any(_command_name(m) for m in _ESCAPED_COMMAND.finditer(text)):
+        return hits
     for math in _MATH.finditer(text):
         for m in _ESCAPED_COMMAND.finditer(text, math.start(), math.end()):
-            escape, letters = m.group(1), m.group(2)
-            if escape in _LINE_BREAKS and len(letters) < 2:
-                continue
-            name = _ESCAPE_LETTERS[escape] + letters
-            if name not in _COMMANDS:
+            name = _command_name(m)
+            if name is None:
                 continue
             start, end = m.start(), m.end()
             # An odd run of backslashes before the escape leaves one stray
