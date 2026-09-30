@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import pytest
+from inspect_ai import Task
+from inspect_ai.dataset import Sample
+from inspect_ai.scorer import Score, accuracy, choice, match, scorer
 
 from inspect_dataset.loader import (
     _input_to_str,
@@ -234,6 +237,65 @@ def test_multiple_samples_all_loaded():
     records, _ = load_inspect_task(task)
     assert len(records) == 3
     assert [r["id"] for r in records] == ["s1", "s2", "s3"]
+
+
+# ---------------------------------------------------------------------------
+# load_inspect_task — scorer registry names on the FieldMap
+# ---------------------------------------------------------------------------
+
+
+@scorer(metrics=[accuracy()])
+def custom_scorer():
+    async def score(state, target):
+        return Score(value=1)
+
+    return score
+
+
+def _real_task(**kwargs) -> Task:
+    return Task(dataset=[Sample(input="What is 2+2?", target="4", id="s1")], **kwargs)
+
+
+def test_builtin_scorer_registry_name():
+    _, fields = load_inspect_task(_real_task(scorer=choice()))
+    assert fields.scorers == ["inspect_ai/choice"]
+
+
+def test_multiple_scorers_keep_their_order():
+    _, fields = load_inspect_task(_real_task(scorer=[match(), choice()]))
+    assert fields.scorers == ["inspect_ai/match", "inspect_ai/choice"]
+
+
+def test_custom_scorer_registry_name():
+    _, fields = load_inspect_task(_real_task(scorer=custom_scorer()))
+    assert fields.scorers == ["custom_scorer"]
+
+
+def test_task_without_scorer_has_empty_scorer_list():
+    _, fields = load_inspect_task(_real_task())
+    assert fields.scorers == []
+
+
+def test_stand_in_task_without_scorer_attribute():
+    _, fields = load_inspect_task(_make_task(_Sample("q", "a")))
+    assert fields.scorers == []
+
+
+def test_single_scorer_not_in_a_list():
+    task = _make_task(_Sample("q", "a"))
+    task.scorer = choice()  # type: ignore[attr-defined]
+    _, fields = load_inspect_task(task)
+    assert fields.scorers == ["inspect_ai/choice"]
+
+
+def test_non_registry_scorer_is_skipped():
+    async def plain(state, target):
+        return Score(value=1)
+
+    task = _make_task(_Sample("q", "a"))
+    task.scorer = [plain, choice()]  # type: ignore[attr-defined]
+    _, fields = load_inspect_task(task)
+    assert fields.scorers == ["inspect_ai/choice"]
 
 
 # ---------------------------------------------------------------------------
