@@ -1,4 +1,7 @@
+import pytest
+
 from inspect_dataset._types import FieldMap
+from inspect_dataset.scanner import ScannerNotApplicable
 from inspect_dataset.scanners.inconsistent_format import inconsistent_format
 
 FIELDS = FieldMap(question="q", answer="a")
@@ -129,3 +132,31 @@ def test_empty_answers_ignored():
 
 def test_all_empty_no_findings():
     assert inconsistent_format(records("", ""), FIELDS) == []
+
+
+# ---------------------------------------------------------------------------
+# Non-scalar answer columns (issue #26)
+# ---------------------------------------------------------------------------
+
+
+def test_list_answers_are_not_applicable():
+    recs = [{"q": "q", "a": [f"answer {i}"]} for i in range(10)]
+    with pytest.raises(ScannerNotApplicable, match=r"'a'.*list"):
+        inconsistent_format(recs, FIELDS)
+
+
+def test_subfield_compares_elements_across_rows():
+    fields = FieldMap(question="q", answer="a", answer_subfield="text")
+    recs = [{"q": "q", "a": [{"text": "yes"}, {"text": "no"}]} for _ in range(5)]
+    recs.append({"q": "q", "a": [{"text": "no"}, {"text": "Yes"}]})
+    findings = [
+        f for f in inconsistent_format(recs, fields) if f.metadata.get("issue") == "capitalisation"
+    ]
+    assert len(findings) == 1
+    assert findings[0].sample_index == 5
+    assert findings[0].metadata == {
+        "answer": "Yes",
+        "issue": "capitalisation",
+        "answer_subfield": "text",
+        "element_index": 1,
+    }

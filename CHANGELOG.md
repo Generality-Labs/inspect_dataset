@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- `answer_length` and `inconsistent_format` no longer measure the Python repr of list or struct answer columns, which flagged every row (all 2,123 rows of StereoSet's `sentences` column). On such a column they now emit no findings and are recorded as not applicable ([#26](https://github.com/Generality-Labs/inspect_dataset/issues/26)).
+
+### Added
+
+- `scanner_status` in `scan_summary.json`: `{"status": "ran"}` or `{"status": "not_applicable", "reason": ...}` for every scanner run, so a consumer can tell "checked and clean" from "did not apply". Not-applicable scanners are also listed in the terminal report and `REPORT.md`.
+- `inspect_dataset.ScannerNotApplicable`, which a scanner raises to be recorded as not applicable.
+- `--answer-subfield PATH` for `scan`: a dotted path to the scalar that `answer_length` and `inconsistent_format` measure inside a list or struct answer column. Lists along the path are measured element by element, and `*` measures each element of a list of strings. Findings made this way carry `answer_subfield` and `element_index` in their metadata.
+
 ## [0.3.4] - 2026-04-04
 
 ### Added

@@ -17,6 +17,8 @@ class FieldMap:
     answer: str
     id: str | None = None
     image: str | None = None
+    # Dotted path to the scalar inside a non-scalar answer column, for the answer-text scanners.
+    answer_subfield: str | None = None
 
 
 @dataclass
