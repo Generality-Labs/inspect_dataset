@@ -143,6 +143,11 @@ def test_cli_scans_google_boolq_from_hub(fake_packages: Path, monkeypatch):
     def fail_load_task(spec, limit=None):
         raise AssertionError(f"routed {spec!r} to the task loader")
 
+    monkeypatch.setattr(
+        cli_mod,
+        "resolve_hf_split_config",
+        lambda path, split, config, revision: ("validation", None, True, True),
+    )
     monkeypatch.setattr(cli_mod, "load_hf_dataset", fake_load_hf_dataset)
     monkeypatch.setattr(cli_mod, "load_task_from_spec", fail_load_task)
     out = fake_packages / "findings"
