@@ -78,6 +78,17 @@ def test_json_safe_record_replaces_images_in_lists():
     }
 
 
+def test_json_safe_record_replaces_images_inside_structs():
+    record = {
+        "struct": {"img": {"bytes": PNG_BYTES, "path": "a.png"}, "caption": "x"},
+        "meta": {"figures": [PNG_URI], (1, 2): "pair"},
+    }
+    assert _record_to_json_safe(record) == {
+        "struct": {"img": {"__type": "image", "path": "a.png"}, "caption": "x"},
+        "meta": {"figures": [{"__type": "image", "path": "data:image/png"}], "(1, 2)": "pair"},
+    }
+
+
 async def test_sample_detail_serves_task_images(tmp_path: Path, task_spec: str):
     records, fields = load_task_from_spec(task_spec)
     run = run_scanners(records, fields, [], dataset_name=task_spec, source_type="inspect_task")

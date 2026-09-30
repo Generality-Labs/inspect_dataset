@@ -262,7 +262,7 @@ def _compute_schema(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
 def _record_to_json_safe(record: dict[str, Any]) -> dict[str, Any]:
     """Convert a record to a JSON-serialisable dict.
 
-    Images, including those inside lists, are replaced with a placeholder so
+    Images, including those inside lists and structs, are replaced with a placeholder so
     the frontend knows an image is present without transmitting the raw bytes
     here. Use the dedicated /record/:idx endpoint to get actual image data.
     """
@@ -278,6 +278,8 @@ def _json_safe_value(val: Any) -> Any:
         return {"__type": "bytes", "size": len(val)}
     if isinstance(val, list | tuple):
         return [_json_safe_value(v) for v in val]
+    if isinstance(val, dict):
+        return {k if isinstance(k, str) else str(k): _json_safe_value(v) for k, v in val.items()}
     try:
         json.dumps(val)
         return val
