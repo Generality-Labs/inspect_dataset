@@ -229,6 +229,7 @@ def test_cli_task_mode_records_null_split_and_defaulted_flags(tmp_path: Path, mo
         return [dict(r) for r in _RECORDS], FieldMap(question="q", answer="a")
 
     monkeypatch.setattr(cli_mod, "load_task_from_spec", fake_load_task_from_spec)
+    monkeypatch.setattr(cli_mod, "is_task_spec", lambda spec: True)
     out = tmp_path / "findings"
     result = CliRunner().invoke(
         cli, ["scan", "inspect_dataset/fake_task", "--scanners", "answer_length", "-o", str(out)]

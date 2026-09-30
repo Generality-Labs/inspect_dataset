@@ -10,9 +10,11 @@ from rich.console import Console
 
 from inspect_dataset.loader import (
     DatasetSelectionError,
+    is_task_spec,
     load_hf_dataset,
     load_local_samples,
     load_task_from_spec,
+    owner_is_importable,
     resolve_fields,
     resolve_hf_split_config,
 )
@@ -262,18 +264,10 @@ def scan(
             for s in scanner_list
         ]
 
-    # Detect the source type.
-    # - An existing directory → local annotation directory
-    # - "@" present → always a task spec (module@fn or file@fn)
-    # - "package/task" with no "@" → task if "package" is an installed Python
-    #   package (importlib.util.find_spec returns non-None); HF slugs like
-    #   "owner/dataset" have no corresponding Python package.
-    import importlib.util as _ilu
-
+    # An existing directory is local samples. Otherwise is_task_spec decides
+    # between an inspect_ai task and a HuggingFace dataset path.
     is_local = Path(dataset).is_dir()
-    is_task = not is_local and (
-        "@" in dataset or ("/" in dataset and _ilu.find_spec(dataset.split("/")[0]) is not None)
-    )
+    is_task = not is_local and is_task_spec(dataset)
     resolved_split: str | None = split
     split_defaulted: bool | None = None
     config_defaulted: bool | None = None
@@ -292,19 +286,29 @@ def scan(
         if question_field or answer_field or id_field:
             fields = resolve_fields(records, question_field, answer_field, id_field, image_field)
     else:
+        from datasets.exceptions import DatasetNotFoundError
+
         try:
             resolved_split, config, split_defaulted, config_defaulted = resolve_hf_split_config(
                 dataset, split, config, revision
             )
+            config_msg = f" config=[bold]{config}[/bold]" if config else ""
+            console.print(
+                f"Loading [bold]{dataset}[/bold] split=[bold]{resolved_split}[/bold]{config_msg}..."
+            )
+            records = load_hf_dataset(
+                dataset, split=resolved_split, revision=revision, limit=limit, config=config
+            )
         except DatasetSelectionError as e:
             raise click.UsageError(f"{e} Choose one with --{e.option}.") from None
-        config_msg = f" config=[bold]{config}[/bold]" if config else ""
-        console.print(
-            f"Loading [bold]{dataset}[/bold] split=[bold]{resolved_split}[/bold]{config_msg}..."
-        )
-        records = load_hf_dataset(
-            dataset, split=resolved_split, revision=revision, limit=limit, config=config
-        )
+        except DatasetNotFoundError as e:
+            # The owner is a Python package, so the user may have meant a task.
+            if not owner_is_importable(dataset):
+                raise
+            raise click.ClickException(
+                f"{dataset!r} is not an inspect_ai task, and loading it as a "
+                f"HuggingFace dataset failed: {e}"
+            ) from e
         fields = resolve_fields(records, question_field, answer_field, id_field, image_field)
 
     if answer_subfield is not None:
