@@ -14,6 +14,7 @@ from inspect_dataset.loader import (
     load_hf_dataset,
     load_local_samples,
     load_task_from_spec,
+    owner_is_importable,
     resolve_fields,
     resolve_hf_split_config,
 )
@@ -285,19 +286,29 @@ def scan(
         if question_field or answer_field or id_field:
             fields = resolve_fields(records, question_field, answer_field, id_field, image_field)
     else:
+        from datasets.exceptions import DatasetNotFoundError
+
         try:
             resolved_split, config, split_defaulted, config_defaulted = resolve_hf_split_config(
                 dataset, split, config, revision
             )
+            config_msg = f" config=[bold]{config}[/bold]" if config else ""
+            console.print(
+                f"Loading [bold]{dataset}[/bold] split=[bold]{resolved_split}[/bold]{config_msg}..."
+            )
+            records = load_hf_dataset(
+                dataset, split=resolved_split, revision=revision, limit=limit, config=config
+            )
         except DatasetSelectionError as e:
             raise click.UsageError(f"{e} Choose one with --{e.option}.") from None
-        config_msg = f" config=[bold]{config}[/bold]" if config else ""
-        console.print(
-            f"Loading [bold]{dataset}[/bold] split=[bold]{resolved_split}[/bold]{config_msg}..."
-        )
-        records = load_hf_dataset(
-            dataset, split=resolved_split, revision=revision, limit=limit, config=config
-        )
+        except DatasetNotFoundError as e:
+            # The owner is a Python package, so the user may have meant a task.
+            if not owner_is_importable(dataset):
+                raise
+            raise click.ClickException(
+                f"{dataset!r} is not an inspect_ai task, and loading it as a "
+                f"HuggingFace dataset failed: {e}"
+            ) from e
         fields = resolve_fields(records, question_field, answer_field, id_field, image_field)
 
     if answer_subfield is not None:

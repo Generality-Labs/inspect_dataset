@@ -418,6 +418,11 @@ def _registry_has_task(name: str) -> bool:
     return registry_lookup("task", name) is not None
 
 
+def owner_is_importable(spec: str) -> bool:
+    """Return whether the part of ``spec`` before the first ``/`` is an importable module."""
+    return "/" in spec and _module_exists(spec.split("/", 1)[0])
+
+
 def is_task_spec(spec: str) -> bool:
     """Return whether a DATASET argument names an inspect_ai task.
 
@@ -432,11 +437,9 @@ def is_task_spec(spec: str) -> bool:
     """
     if "@" in spec:
         return True
-    if "/" not in spec:
+    if not owner_is_importable(spec):
         return False
     owner, name = spec.split("/", 1)
-    if not _module_exists(owner):
-        return False
     return _module_exists(f"{owner}.{name}") or _registry_has_task(spec)
 
 

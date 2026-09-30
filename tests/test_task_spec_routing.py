@@ -158,3 +158,35 @@ def test_cli_scans_google_boolq_from_hub(fake_packages: Path, monkeypatch):
     assert result.exit_code == 0, result.output
     assert calls == ["google/boolq"]
     assert json.loads((out / "scan_summary.json").read_text())["source_type"] == "hf"
+
+
+def _hub_missing(monkeypatch):
+    from datasets.exceptions import DatasetNotFoundError
+
+    def fake_resolve(path, split, config, revision):
+        raise DatasetNotFoundError(f"Dataset '{path}' doesn't exist on the Hub.")
+
+    monkeypatch.setattr(cli_mod, "resolve_hf_split_config", fake_resolve)
+
+
+def test_cli_mistyped_task_says_no_task_matched(fake_packages: Path, monkeypatch):
+    pkg = fake_packages / "ids_owner_f"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("")
+    _hub_missing(monkeypatch)
+    result = CliRunner().invoke(
+        cli, ["scan", "ids_owner_f/gpqa_diamnd", "--scanners", "answer_length"]
+    )
+    assert result.exit_code == 1
+    assert "'ids_owner_f/gpqa_diamnd' is not an inspect_ai task" in result.output
+    assert "doesn't exist on the Hub" in result.output
+
+
+def test_cli_missing_hf_dataset_keeps_hub_error(monkeypatch):
+    from datasets.exceptions import DatasetNotFoundError
+
+    _hub_missing(monkeypatch)
+    result = CliRunner().invoke(
+        cli, ["scan", "no_such_owner_pkg_xyz/ds", "--scanners", "answer_length"]
+    )
+    assert isinstance(result.exception, DatasetNotFoundError)

@@ -23,7 +23,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Fixed
 
 - `answer_length` and `inconsistent_format` no longer measure the Python repr of list or struct answer columns, which flagged every row (all 2,123 rows of StereoSet's `sentences` column). On such a column they now emit no findings and are recorded as not applicable ([#26](https://github.com/Generality-Labs/inspect_dataset/issues/26)).
-- `scan` loads HuggingFace datasets under owners that are also Python packages, such as `google/boolq` and `openai/gsm8k`, from the Hub. It used to treat them as inspect_ai task specs and fail with `No tasks found`. An `owner/name` spec is now a task only when the module `owner.name` exists or the inspect_ai registry has a task by that name ([#31](https://github.com/Generality-Labs/inspect_dataset/issues/31)).
+- `scan` loads HuggingFace datasets under owners that are also Python packages, such as `google/boolq` and `openai/gsm8k`, from the Hub. It used to treat them as inspect_ai task specs and fail with `No tasks found`. An `owner/name` spec is now a task only when the module `owner.name` exists or the inspect_ai registry has a task by that name. If the owner is a Python package and the Hub has no such dataset, `scan` says the spec is not an inspect_ai task either ([#31](https://github.com/Generality-Labs/inspect_dataset/issues/31)).
 
 ## [0.3.4] - 2026-04-04
 
