@@ -75,6 +75,15 @@ def test_answer_requirement_unmet_when_every_answer_is_empty(answers: list[Any])
     assert _answer_status(answers) == {"status": "not_applicable", "reason": NO_ANSWERS}
 
 
+def test_answer_requirement_treats_numpy_arrays_by_size():
+    np = pytest.importorskip("numpy")
+    assert _answer_status([np.array([]), None]) == {
+        "status": "not_applicable",
+        "reason": NO_ANSWERS,
+    }
+    assert _answer_status([np.array([]), np.array(["a"])]) == {"status": "ran"}
+
+
 def test_answer_requirement_unmet_when_answer_column_is_absent():
     scanner = ScannerDef(name="needs_answer", fn=_Recorder(), requires=["answer"])
     run = run_scanners([{"q": "question"}], FIELDS, [scanner])
