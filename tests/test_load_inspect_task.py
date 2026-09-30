@@ -13,7 +13,7 @@ from inspect_dataset.loader import (
     load_inspect_task,
     load_task_from_spec,
 )
-from inspect_dataset.scanners._answers import answer_texts
+from inspect_dataset.scanners._answers import answer_texts, resolved_answer
 from inspect_dataset.scanners.answer_length import answer_length
 
 # ---------------------------------------------------------------------------
@@ -251,6 +251,34 @@ def test_choices_preserved():
     task = _make_task(_Sample("which modality?", "mri", choices=["mri", "ct", "xray"]))
     records, _ = load_inspect_task(task)
     assert records[0]["choices"] == ["mri", "ct", "xray"]
+
+
+def test_choices_field_set_when_a_sample_has_choices():
+    task = _make_task(
+        _Sample("open question", "liver"),
+        _Sample("which modality?", "A", choices=["mri", "ct"]),
+    )
+    records, fields = load_inspect_task(task)
+    assert fields.choices == "choices"
+    assert "choices" not in records[0]
+
+
+def test_choices_field_unset_without_choices():
+    _, fields = load_inspect_task(_make_task(_Sample("q", "a"), _Sample("q2", "b")))
+    assert fields.choices is None
+
+
+def test_choices_in_metadata_do_not_set_the_choices_field():
+    task = _make_task(_Sample("q", "a", metadata={"choices": {"label": ["A"], "text": ["x"]}}))
+    _, fields = load_inspect_task(task)
+    assert fields.choices is None
+
+
+def test_real_sample_choices_resolve_from_letter_target():
+    task = Task(dataset=[Sample(input="Pick", target="B", choices=["red", "blue"], id="s1")])
+    records, fields = load_inspect_task(task)
+    assert records[0]["choices"] == ["red", "blue"]
+    assert resolved_answer(records[0], fields) == "blue"
 
 
 def test_files_stored_under_dunder_key():

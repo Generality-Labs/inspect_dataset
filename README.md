@@ -185,7 +185,7 @@ The names are `"answer"` (at least one row has a non-empty answer), `"image"` (a
 
 ## inspect_ai tasks
 
-A task spec such as `inspect_evals/drop` loads the task's samples. Each record has `input` (the text of the last user message), `target` (the first target string), `targets` (every target string, as a list) and `id`, plus `choices` when the sample has them and every key of the sample's metadata. `input`, `target` and `id` are the question, answer and id fields. To measure every alternative answer of a list target, pass `--answer-field targets --answer-subfield '*'`.
+A task spec such as `inspect_evals/drop` loads the task's samples. Each record has `input` (the text of the last user message), `target` (the first target string), `targets` (every target string, as a list) and `id`, plus `choices` when the sample has them and every key of the sample's metadata. `input`, `target` and `id` are the question, answer and id fields. When any sample has choices, scanners find them through `FieldMap.choices`, which lets them read a letter target as the choice it names. To measure every alternative answer of a list target, pass `--answer-field targets --answer-subfield '*'`.
 
 ## Integration with inspect-scout
 

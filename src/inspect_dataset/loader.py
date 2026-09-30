@@ -357,6 +357,7 @@ def load_inspect_task(task_or_fn: Any, limit: int | None = None) -> tuple[list[R
 
     records: list[Record] = []
     metadata_keys: set[str] = set()
+    has_choices = False
     for sample in dataset:
         record: Record = {
             "input": _input_to_str(sample.input),
@@ -366,6 +367,7 @@ def load_inspect_task(task_or_fn: Any, limit: int | None = None) -> tuple[list[R
         }
         if sample.choices:
             record["choices"] = sample.choices
+            has_choices = True
         if sample.metadata:
             # Merge metadata into record so scanners can access it directly
             for k, v in sample.metadata.items():
@@ -383,6 +385,7 @@ def load_inspect_task(task_or_fn: Any, limit: int | None = None) -> tuple[list[R
         answer="target",
         id="id",
         group=detect_group_field(records, metadata_keys),
+        choices="choices" if has_choices else None,
         scorers=_scorer_names(task),
     )
     return records, fields
