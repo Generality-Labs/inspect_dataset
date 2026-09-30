@@ -58,6 +58,9 @@ class ScanRun:
     config: str | None = None  # HF config/subset name (multi-config datasets)
     # scanner name → {"status": "ran"} or {"status": "not_applicable", "reason": ...}
     scanner_status: dict[str, dict[str, str]] = field(default_factory=dict)
+    # HF mode: whether split/config were filled in rather than given. None for other sources.
+    split_defaulted: bool | None = None
+    config_defaulted: bool | None = None
 
     def by_scanner(self) -> dict[str, list[Finding]]:
         result: dict[str, list[Finding]] = {}

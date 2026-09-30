@@ -9,10 +9,12 @@ from dotenv import load_dotenv
 from rich.console import Console
 
 from inspect_dataset.loader import (
+    DatasetSelectionError,
     load_hf_dataset,
     load_local_samples,
     load_task_from_spec,
     resolve_fields,
+    resolve_hf_split_config,
 )
 from inspect_dataset.report import print_report, save_findings
 from inspect_dataset.scanner import (
@@ -75,12 +77,22 @@ def cli() -> None:
 
 @cli.command()
 @click.argument("dataset")
-@click.option("--split", default="train", show_default=True, help="Dataset split to load.")
+@click.option(
+    "--split",
+    default=None,
+    help=(
+        "HF dataset split to load. Defaults to the only split, or to 'train' when there are "
+        "several. Required when there are several splits and none is 'train'."
+    ),
+)
 @click.option("--revision", default=None, help="Dataset revision / commit SHA to pin.")
 @click.option(
     "--config",
     default=None,
-    help="HF config/subset name (required for multi-config datasets, e.g. a specific subset).",
+    help=(
+        "HF config/subset name. Defaults to the only config or the default one. "
+        "Required when the dataset has several configs and no default."
+    ),
 )
 @click.option(
     "--question-field",
@@ -173,7 +185,7 @@ def cli() -> None:
 )
 def scan(
     dataset: str,
-    split: str,
+    split: str | None,
     revision: str | None,
     config: str | None,
     question_field: str | None,
@@ -263,6 +275,8 @@ def scan(
         "@" in dataset or ("/" in dataset and _ilu.find_spec(dataset.split("/")[0]) is not None)
     )
     resolved_split: str | None = split
+    split_defaulted: bool | None = None
+    config_defaulted: bool | None = None
 
     if is_local:
         dataset = str(Path(dataset).resolve())
@@ -278,10 +292,18 @@ def scan(
         if question_field or answer_field or id_field:
             fields = resolve_fields(records, question_field, answer_field, id_field, image_field)
     else:
+        try:
+            resolved_split, config, split_defaulted, config_defaulted = resolve_hf_split_config(
+                dataset, split, config, revision
+            )
+        except DatasetSelectionError as e:
+            raise click.UsageError(f"{e} Choose one with --{e.option}.") from None
         config_msg = f" config=[bold]{config}[/bold]" if config else ""
-        console.print(f"Loading [bold]{dataset}[/bold] split=[bold]{split}[/bold]{config_msg}...")
+        console.print(
+            f"Loading [bold]{dataset}[/bold] split=[bold]{resolved_split}[/bold]{config_msg}..."
+        )
         records = load_hf_dataset(
-            dataset, split=split, revision=revision, limit=limit, config=config
+            dataset, split=resolved_split, revision=revision, limit=limit, config=config
         )
         fields = resolve_fields(records, question_field, answer_field, id_field, image_field)
 
@@ -347,6 +369,9 @@ def scan(
             revision=revision,
             config=resolved_config,
         )
+
+    run.split_defaulted = split_defaulted
+    run.config_defaulted = config_defaulted
 
     print_report(run, console=console)
 

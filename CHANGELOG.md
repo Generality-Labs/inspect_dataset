@@ -15,6 +15,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `scanner_status` in `scan_summary.json`: `{"status": "ran"}` or `{"status": "not_applicable", "reason": ...}` for every scanner run, so a consumer can tell "checked and clean" from "did not apply". Not-applicable scanners are also listed in the terminal report and `REPORT.md`.
 - `inspect_dataset.ScannerNotApplicable`, which a scanner raises to be recorded as not applicable.
 - `--answer-subfield PATH` for `scan`: a dotted path to the scalar that `answer_length` and `inconsistent_format` measure inside a list or struct answer column. Lists along the path are measured element by element, and `*` measures each element of a list of strings. Findings made this way carry `answer_subfield` and `element_index` in their metadata.
+- `mojibake` scanner: flags UTF-8 text decoded with the wrong codec (Windows-1252, Latin-1 or Mac Roman) in questions, answers and each choice. It reports a span only when re-encoding it with that codec and decoding as UTF-8 gives ordinary text, and it records the repair. It finds 15 fields in CoCoNot and 12 in MMLU-Pro ([#39](https://github.com/Generality-Labs/inspect_dataset/issues/39)).
+- `split_defaulted` and `config_defaulted` in `scan_summary.json`. In HF mode they say whether the split and config were given or filled in. They are `null` for task and local scans ([#32](https://github.com/Generality-Labs/inspect_dataset/issues/32)).
+- `inspect_dataset.loader.resolve_hf_split_config`, which fills in a missing split and config for a HF dataset ([#32](https://github.com/Generality-Labs/inspect_dataset/issues/32)).
+
+### Changed
+
+- HF-mode scans pick the split and config when they are not given. `--split` now defaults to the dataset's only split, or to `train` when there are several. `--config` defaults to the only config or the dataset's default config. A dataset with several splits and no `train`, or several configs and no default, fails with a message that lists the choices and names the option to pass ([#32](https://github.com/Generality-Labs/inspect_dataset/issues/32)).
+- Task-mode and local scans record `split` as `null` unless `--split` is given. Task-mode scans used to record the unused `--split` default, `train` ([#32](https://github.com/Generality-Labs/inspect_dataset/issues/32)).
 
 ## [0.3.4] - 2026-04-04
 

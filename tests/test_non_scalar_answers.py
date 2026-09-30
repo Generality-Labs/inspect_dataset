@@ -117,7 +117,11 @@ def _scan_stereoset_like(tmp_path: Path, monkeypatch, extra_args: list[str]):
     def fake_load_hf_dataset(dataset, split="train", revision=None, limit=None, config=None):
         return [dict(r) for r in STEREOSET_LIKE]
 
+    def fake_resolve(path, split, config, revision=None):
+        return split or "validation", config or "intersentence", split is None, config is None
+
     monkeypatch.setattr(cli_mod, "load_hf_dataset", fake_load_hf_dataset)
+    monkeypatch.setattr(cli_mod, "resolve_hf_split_config", fake_resolve)
     out = tmp_path / "findings"
     result = CliRunner().invoke(
         cli,
