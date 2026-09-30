@@ -100,7 +100,8 @@ def test_inline_math_does_not_span_blank_line():
 
 
 def test_escaped_dollar_does_not_open_math():
-    assert latex_escapes(rec("Price \\$5 and\neq \\$6"), FIELDS) == []
+    # Without the escape check, "$5 and" + newline + "eq $" would pair up as math.
+    assert latex_escapes(rec("Price \\$5 and\neq $x$."), FIELDS) == []
 
 
 def test_letters_must_complete_a_command():
