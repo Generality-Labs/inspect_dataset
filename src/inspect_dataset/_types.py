@@ -70,6 +70,8 @@ class ScanRun:
     group_by_source: str | None = None  # how group_by was chosen: "option" | "auto" | None
     # scanner name → {"status": "ran"} or {"status": "not_applicable", "reason": ...}
     scanner_status: dict[str, dict[str, str]] = field(default_factory=dict)
+    task: str | None = None  # task spec as given on the command line (task mode)
+    scorers: list[str] | None = None  # the task's scorer registry names (task mode)
     # HF mode: whether split/config were filled in rather than given. None for other sources.
     split_defaulted: bool | None = None
     config_defaulted: bool | None = None

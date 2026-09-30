@@ -10,6 +10,7 @@ from rich.markup import escape
 from rich.table import Table
 
 from inspect_dataset._types import FieldMap, Record, ScanRun
+from inspect_dataset._version import package_version
 
 _SEVERITY_COLOUR = {"high": "red", "medium": "yellow", "low": "cyan"}
 _SEVERITY_ORDER = {"high": 0, "medium": 1, "low": 2}
@@ -33,11 +34,13 @@ def print_report(run: ScanRun, console: Console | None = None) -> None:
         console = Console()
 
     console.print()
-    console.rule("[bold]inspect-dataset scan report[/bold]")
+    console.rule(f"[bold]inspect-dataset {package_version()} scan report[/bold]")
     console.print(
         f"  Dataset: [bold]{run.dataset_name}[/bold]"
         + (f"  split={run.split}" if run.split else "")
     )
+    if run.scorers:
+        console.print(f"  Scorers: {', '.join(run.scorers)}")
     console.print(f"  Samples: {run.total_samples:,}")
     if run.group_by is not None:
         console.print(f"  Grouped by: {run.group_by}{_source_suffix(run)}")
@@ -109,6 +112,7 @@ def save_findings(
         out.write_text(json.dumps([f.to_dict() for f in findings], indent=2, default=str))
 
     summary = {
+        "version": package_version(),
         "dataset_name": run.dataset_name,
         "split": run.split,
         "source_type": run.source_type,
@@ -116,6 +120,8 @@ def save_findings(
         "config": run.config,
         "group_by": run.group_by,
         "group_by_source": run.group_by_source,
+        "task": run.task,
+        "scorers": run.scorers,
         "split_defaulted": run.split_defaulted,
         "config_defaulted": run.config_defaulted,
         "files_root": files_root,
@@ -156,7 +162,12 @@ def _write_markdown_report(run: ScanRun, path: Path) -> None:
     lines = [
         "# inspect-dataset Report",
         "",
+        f"**inspect-dataset version:** {package_version()}",
         f"**Dataset:** {run.dataset_name}" + (f" (split: `{run.split}`)" if run.split else ""),
+    ]
+    if run.scorers:
+        lines.append("**Scorers:** " + ", ".join(f"`{s}`" for s in run.scorers))
+    lines += [
         f"**Samples scanned:** {run.total_samples:,}",
     ]
     if run.group_by is not None:
