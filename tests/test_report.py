@@ -146,3 +146,47 @@ async def test_run_scanners_async_records_group_by():
         group_by_source="option",
     )
     assert (run.group_by, run.group_by_source) == ("s", "option")
+
+
+# ---------------------------------------------------------------------------
+# samples.json — question and answer are always strings
+# ---------------------------------------------------------------------------
+
+
+def _samples(records: list[dict], fields: FieldMap) -> list[dict]:
+    with tempfile.TemporaryDirectory() as tmp:
+        save_findings(_make_run(), Path(tmp), records=records, fields=fields)
+        return json.loads((Path(tmp) / "samples.json").read_text())
+
+
+def test_samples_keep_string_values():
+    samples = _samples([{"q": "What?", "a": "yes", "id": 3}], FieldMap("q", "a", id="id"))
+    assert samples == [{"index": 0, "question": "What?", "answer": "yes", "id": 3}]
+
+
+def test_samples_render_list_and_struct_answers_as_json():
+    records = [
+        {"q": "Which?", "a": ["4", "four"]},
+        {"q": "Which?", "a": {"text": "café", "label": 1}},
+    ]
+    samples = _samples(records, FieldMap(question="q", answer="a"))
+    assert samples[0]["answer"] == '[\n  "4",\n  "four"\n]'
+    assert samples[1]["answer"] == '{\n  "text": "café",\n  "label": 1\n}'
+    assert all(isinstance(s["answer"], str) for s in samples)
+
+
+def test_samples_render_numbers_and_missing_values():
+    samples = _samples([{"q": 7, "a": None}, {"q": "x"}], FieldMap(question="q", answer="a"))
+    assert [(s["question"], s["answer"]) for s in samples] == [("7", ""), ("x", "")]
+
+
+def test_samples_never_contain_bytes():
+    records = [{"q": "Q", "a": [{"bytes": b"\x89PNG\r\n", "path": "x.png"}]}]
+    answer = _samples(records, FieldMap(question="q", answer="a"))[0]["answer"]
+    assert "PNG" not in answer
+    assert json.loads(answer) == [{"bytes": "<6 bytes>", "path": "x.png"}]
+
+
+def test_samples_keep_scalar_rendering():
+    samples = _samples([{"q": "Q", "a": True}, {"q": "Q", "a": 1.5}], FieldMap("q", "a"))
+    assert [s["answer"] for s in samples] == ["True", "1.5"]

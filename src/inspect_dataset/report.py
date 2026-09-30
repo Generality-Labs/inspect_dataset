@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -147,8 +148,8 @@ def save_findings(
         for i, rec in enumerate(records):
             sample: dict[str, Any] = {
                 "index": i,
-                "question": str(rec.get(fields.question, "")),
-                "answer": str(rec.get(fields.answer, "")),
+                "question": _as_text(rec.get(fields.question)),
+                "answer": _as_text(rec.get(fields.answer)),
             }
             if fields.id and fields.id in rec:
                 sample["id"] = rec[fields.id]
@@ -156,6 +157,21 @@ def save_findings(
         (output_dir / "samples.json").write_text(json.dumps(samples, indent=2, default=str))
 
     _write_markdown_report(run, output_dir / "REPORT.md")
+
+
+def _as_text(value: Any) -> str:
+    """A samples.json field as a string, which the viewer expects: lists and structs as JSON."""
+    if value is None:
+        return ""
+    if isinstance(value, Mapping | list | tuple):
+        return json.dumps(value, indent=2, ensure_ascii=False, default=_json_default)
+    return str(value)
+
+
+def _json_default(value: Any) -> str:
+    if isinstance(value, bytes):
+        return f"<{len(value)} bytes>"
+    return str(value)
 
 
 def _write_markdown_report(run: ScanRun, path: Path) -> None:
