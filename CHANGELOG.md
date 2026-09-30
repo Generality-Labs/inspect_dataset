@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- HF-mode scans pick the split and config when they are not given. `--split` now defaults to the dataset's only split, or to `train` when there are several. `--config` defaults to the only config or the dataset's default config. A dataset with several splits and no `train`, or several configs and no default, fails with a message that lists the choices and names the option to pass ([#32](https://github.com/Generality-Labs/inspect_dataset/issues/32)).
+- Task-mode and local scans record `split` as `null` unless `--split` is given. Task-mode scans used to record the unused `--split` default, `train` ([#32](https://github.com/Generality-Labs/inspect_dataset/issues/32)).
+
+### Added
+
+- `split_defaulted` and `config_defaulted` in `scan_summary.json`. In HF mode they say whether the split and config were given or filled in. They are `null` for task and local scans ([#32](https://github.com/Generality-Labs/inspect_dataset/issues/32)).
+- `inspect_dataset.loader.resolve_hf_split_config`, which fills in a missing split and config for a HF dataset ([#32](https://github.com/Generality-Labs/inspect_dataset/issues/32)).
+
 ## [0.3.4] - 2026-04-04
 
 ### Added

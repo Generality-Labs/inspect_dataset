@@ -5,13 +5,23 @@ The ``datasets`` Hub functions are mocked, so no network access is needed.
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
 import datasets
 import pytest
+from click.testing import CliRunner
 
+import inspect_dataset.cli as cli_mod
+from inspect_dataset.cli import cli
 from inspect_dataset.loader import DatasetSelectionError, resolve_hf_split_config
+
+_RECORDS = [
+    {"q": "What is 2+2?", "a": "4"},
+    {"q": "Capital of France?", "a": "Paris"},
+]
 
 
 def _fake_hub(
@@ -137,3 +147,96 @@ def test_builder_without_split_info_falls_back_to_split_names(monkeypatch):
     split, _, _, _ = resolve_hf_split_config("owner/ds", None, None, None)
     assert split == "test"
     assert [c["fn"] for c in calls] == ["load_dataset_builder"]
+
+
+def _scan(tmp_path: Path, monkeypatch, args: list[str], dataset: str = "owner/ds"):
+    loaded: dict[str, Any] = {}
+
+    def fake_load_hf_dataset(dataset, split="train", revision=None, limit=None, config=None):
+        loaded.update(split=split, config=config, revision=revision)
+        return [dict(r) for r in _RECORDS]
+
+    monkeypatch.setattr(cli_mod, "load_hf_dataset", fake_load_hf_dataset)
+    out = tmp_path / "findings"
+    result = CliRunner().invoke(
+        cli,
+        [
+            "scan",
+            dataset,
+            "--question-field",
+            "q",
+            "--answer-field",
+            "a",
+            "--scanners",
+            "answer_length",
+            "-o",
+            str(out),
+            *args,
+        ],
+    )
+    return result, loaded, out
+
+
+def test_cli_records_defaulted_split_and_config(tmp_path: Path, monkeypatch):
+    _fake_hub(monkeypatch, splits=["test"])
+    result, loaded, out = _scan(tmp_path, monkeypatch, [])
+    assert result.exit_code == 0, result.output
+    assert loaded == {"split": "test", "config": "default", "revision": None}
+
+    summary = json.loads((out / "scan_summary.json").read_text())
+    assert summary["split"] == "test"
+    assert summary["config"] == "default"
+    assert summary["split_defaulted"] is True
+    assert summary["config_defaulted"] is True
+
+
+def test_cli_records_given_split_and_config(tmp_path: Path, monkeypatch):
+    calls = _fake_hub(monkeypatch, splits=["test"])
+    result, loaded, out = _scan(tmp_path, monkeypatch, ["--split", "dev", "--config", "main"])
+    assert result.exit_code == 0, result.output
+    assert calls == []
+    assert loaded["split"] == "dev"
+    assert loaded["config"] == "main"
+
+    summary = json.loads((out / "scan_summary.json").read_text())
+    assert summary["split_defaulted"] is False
+    assert summary["config_defaulted"] is False
+
+
+def test_cli_several_splits_without_train_names_split_option(tmp_path: Path, monkeypatch):
+    _fake_hub(monkeypatch, splits=["test", "validation"])
+    result, loaded, _ = _scan(tmp_path, monkeypatch, [], dataset="TIGER-Lab/MMLU-Pro")
+    assert result.exit_code == 2
+    assert "--split" in result.output
+    assert "test, validation" in result.output
+    assert loaded == {}
+
+
+def test_cli_several_configs_names_config_option(tmp_path: Path, monkeypatch):
+    _fake_hub(monkeypatch, splits=["test"], configs=["ARC-Challenge", "ARC-Easy"])
+    result, loaded, _ = _scan(tmp_path, monkeypatch, [], dataset="allenai/ai2_arc")
+    assert result.exit_code == 2
+    assert "--config" in result.output
+    assert "ARC-Challenge, ARC-Easy" in result.output
+    assert "load_dataset(" not in result.output
+    assert loaded == {}
+
+
+def test_cli_task_mode_records_null_split_and_defaulted_flags(tmp_path: Path, monkeypatch):
+    def fake_load_task_from_spec(spec, limit=None):
+        from inspect_dataset._types import FieldMap
+
+        return [dict(r) for r in _RECORDS], FieldMap(question="q", answer="a")
+
+    monkeypatch.setattr(cli_mod, "load_task_from_spec", fake_load_task_from_spec)
+    out = tmp_path / "findings"
+    result = CliRunner().invoke(
+        cli, ["scan", "inspect_dataset/fake_task", "--scanners", "answer_length", "-o", str(out)]
+    )
+    assert result.exit_code == 0, result.output
+
+    summary = json.loads((out / "scan_summary.json").read_text())
+    assert summary["source_type"] == "inspect_task"
+    assert summary["split"] is None
+    assert summary["split_defaulted"] is None
+    assert summary["config_defaulted"] is None
