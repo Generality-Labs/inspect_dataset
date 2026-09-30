@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import dataclasses
 import re
 from datetime import UTC, datetime
 from pathlib import Path
@@ -126,7 +127,8 @@ def cli() -> None:
     default=None,
     help=(
         "Column name for images. Used by duplicate_questions to distinguish "
-        "same-question/different-image pairs from true duplicates."
+        "same-question/different-image pairs from true duplicates, and by "
+        "image_mime_type. Task scans set it to 'images' when the input has images."
     ),
 )
 @click.option(
@@ -307,11 +309,18 @@ def scan(
     elif is_task:
         console.print(f"Loading inspect_ai task [bold]{dataset}[/bold]...")
         records, fields = load_task_from_spec(dataset, limit=limit)
-        # Allow field overrides even on the task path
-        if question_field or answer_field or id_field:
-            detected_group, task_scorers = fields.group, fields.scorers
-            fields = resolve_fields(records, question_field, answer_field, id_field, image_field)
-            fields.group, fields.scorers = detected_group, task_scorers
+        # Overrides replace only the roles given, so the rest of the task's field map stays
+        overrides = {
+            role: value
+            for role, value in (
+                ("question", question_field),
+                ("answer", answer_field),
+                ("id", id_field),
+                ("image", image_field),
+            )
+            if value
+        }
+        fields = dataclasses.replace(fields, **overrides)
     else:
         from datasets.exceptions import DatasetNotFoundError
 
@@ -375,6 +384,7 @@ def scan(
         f"answer=[bold]{fields.answer}[/bold]"
         + (f".[bold]{fields.answer_subfield}[/bold]" if fields.answer_subfield else "")
         + (f"  id=[bold]{fields.id}[/bold]" if fields.id else "")
+        + (f"  image=[bold]{fields.image}[/bold]" if fields.image else "")
     )
 
     all_scanners = scanner_list + llm_scanners

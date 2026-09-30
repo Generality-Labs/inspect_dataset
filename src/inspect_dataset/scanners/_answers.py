@@ -1,9 +1,13 @@
-"""Answer values as the strings that the answer-text scanners measure."""
+"""Answer values as the strings that the answer-text scanners measure.
+
+Also resolves a letter answer, such as the target of a ``choice()``-scored task, to the text of
+the choice it names.
+"""
 
 from __future__ import annotations
 
 from collections import Counter
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 from inspect_dataset._types import FieldMap, Record
@@ -95,3 +99,48 @@ def subfield_metadata(fields: FieldMap, element_index: int) -> dict[str, Any]:
     if fields.answer_subfield is None:
         return {}
     return {"answer_subfield": fields.answer_subfield, "element_index": element_index}
+
+
+def resolve_choice(answer: Any, choices: Any) -> str | None:
+    """The choice text a letter answer names ("A" is the first choice), or None.
+
+    Case and surrounding whitespace are ignored. None when the answer is not a single letter,
+    the letter is past the last choice, or ``choices`` is not a list.
+    """
+    if not isinstance(answer, str) or not isinstance(choices, list | tuple):
+        return None
+    letter = answer.strip().upper()
+    if len(letter) != 1 or not "A" <= letter <= "Z":
+        return None
+    index = ord(letter) - ord("A")
+    if index >= len(choices):
+        return None
+    return str(choices[index])
+
+
+def record_choices(record: Record, fields: FieldMap) -> Sequence[Any] | None:
+    """The record's answer choices, or None when there is no choices field or no list in it."""
+    if fields.choices is None:
+        return None
+    value = record.get(fields.choices)
+    return value if isinstance(value, list | tuple) else None
+
+
+def resolved_answer(record: Record, fields: FieldMap) -> Any:
+    """The record's answer, with letter answers replaced by the choice text they name.
+
+    A list answer is resolved element by element. Answers that do not resolve are returned as
+    they are.
+    """
+    answer = record.get(fields.answer)
+    choices = record_choices(record, fields)
+    if choices is None:
+        return answer
+    if isinstance(answer, list | tuple):
+        return [_resolve_or_keep(a, choices) for a in answer]
+    return _resolve_or_keep(answer, choices)
+
+
+def _resolve_or_keep(answer: Any, choices: Sequence[Any]) -> Any:
+    text = resolve_choice(answer, choices)
+    return answer if text is None else text

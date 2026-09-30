@@ -2,14 +2,26 @@ from __future__ import annotations
 
 import hashlib
 from collections import defaultdict
+from typing import Any
 
 from inspect_dataset._types import FieldMap, Finding, Record
 from inspect_dataset.scanner import ScannerDef, get_sample_id
 
+ImageKey = str | tuple[str | None, ...]
 
-def _image_key(record: Record, image_field: str) -> str | None:
-    """Return a stable key for the image in this record, or None if unavailable."""
+
+def _image_key(record: Record, image_field: str) -> ImageKey | None:
+    """Return a stable key for the image in this record, or None if unavailable.
+
+    A list of images keys as the tuple of its images' keys.
+    """
     img = record.get(image_field)
+    if isinstance(img, list | tuple):
+        return tuple(_single_image_key(i) for i in img) or None
+    return _single_image_key(img)
+
+
+def _single_image_key(img: Any) -> str | None:
     if img is None:
         return None
     if isinstance(img, dict):
@@ -61,7 +73,7 @@ def _scan_with_image(records: list[Record], fields: FieldMap) -> list[Finding]:
         indices = [idx for idx, _ in occurrences]
 
         # Group occurrences by image key to find exact (question, image) duplicates
-        by_image: dict[str | None, list[tuple[int, Record]]] = defaultdict(list)
+        by_image: dict[ImageKey | None, list[tuple[int, Record]]] = defaultdict(list)
         for (idx, record), img_key in zip(occurrences, img_keys, strict=True):
             by_image[img_key].append((idx, record))
 
@@ -91,8 +103,9 @@ def _scan_with_image(records: list[Record], fields: FieldMap) -> list[Finding]:
                     )
                 )
 
-        # Only emit question-reuse findings when images genuinely differ
-        unique_img_keys = {k for k in img_keys if k is not None}
+        # Only emit question-reuse findings when images genuinely differ. No image (None)
+        # counts as its own image, so a question asked with and without one is reuse.
+        unique_img_keys = set(img_keys)
         if len(unique_img_keys) <= 1:
             continue  # all same image — already handled above as exact duplicates
 
@@ -196,7 +209,8 @@ duplicate_questions = ScannerDef(
     fn=_scan,
     description=(
         "Flag questions that appear more than once. "
-        "With --image-field: exact (question+image) duplicates are HIGH; "
+        "With an image field (--image-field, or the input images of a task): "
+        "exact (question+image) duplicates are HIGH; "
         "same question across different images with same answer is MEDIUM "
         "(image-independent question); different answers is LOW (standard VQA reuse). "
         "Without --image-field: same-answer duplicates are HIGH, different-answer are LOW."

@@ -6,7 +6,8 @@ If the actual image data (identified via magic bytes) doesn't match the declared
 extension, model APIs such as Anthropic will reject the request with HTTP 400.
 
 This scanner reads the first bytes of each image to detect the real format and
-compares it against the extension declared in the ``path`` field.
+compares it against the extension declared in the ``path`` field. When the image
+field holds a list of images, each one is checked.
 """
 
 from __future__ import annotations
@@ -119,6 +120,23 @@ def _get_declared_mime(img: Any) -> str | None:
     return None
 
 
+def _mismatch(img: Any) -> tuple[str, str] | None:
+    """The (declared, actual) MIME types of an image whose data does not match its declaration."""
+    if img is None:
+        return None
+    raw = _get_image_bytes(img)
+    if raw is None or len(raw) < 12:
+        return None
+    declared = _get_declared_mime(img)
+    if declared is None:
+        return None
+    actual = detect_mime_from_bytes(raw)
+    if actual is None or actual == declared:
+        # An unknown format cannot be verified
+        return None
+    return declared, actual
+
+
 def _scan(records: list[Record], fields: FieldMap) -> list[Finding]:
     image_field = fields.image
     if image_field is None:
@@ -126,24 +144,15 @@ def _scan(records: list[Record], fields: FieldMap) -> list[Finding]:
         raise ScannerNotApplicable("no image field")
     findings: list[Finding] = []
     for i, record in enumerate(records):
-        img = record.get(image_field)
-        if img is None:
-            continue
-
-        raw = _get_image_bytes(img)
-        if raw is None or len(raw) < 12:
-            continue
-
-        declared = _get_declared_mime(img)
-        if declared is None:
-            continue
-
-        actual = detect_mime_from_bytes(raw)
-        if actual is None:
-            # Unknown format — can't verify
-            continue
-
-        if declared != actual:
+        value = record.get(image_field)
+        # Task mode stores every image of a sample in a list; locate the image by its index.
+        is_list = isinstance(value, list | tuple)
+        images = list(value) if is_list else [value]
+        for image_index, img in enumerate(images):
+            mismatch = _mismatch(img)
+            if mismatch is None:
+                continue
+            declared, actual = mismatch
             findings.append(
                 Finding(
                     scanner="image_mime_type",
@@ -160,6 +169,7 @@ def _scan(records: list[Record], fields: FieldMap) -> list[Finding]:
                     metadata={
                         "declared_mime": declared,
                         "actual_mime": actual,
+                        **({"image_index": image_index} if is_list else {}),
                     },
                 )
             )

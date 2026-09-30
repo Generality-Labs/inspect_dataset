@@ -1,5 +1,5 @@
 from inspect_dataset._types import FieldMap
-from inspect_dataset.scanners.duplicate_questions import duplicate_questions
+from inspect_dataset.scanners.duplicate_questions import _image_key, duplicate_questions
 
 FIELDS = FieldMap(question="q", answer="a")
 
@@ -153,3 +153,50 @@ def test_sample_id_from_field():
     ]
     findings = duplicate_questions(data, fields)
     assert {f.sample_id for f in findings} == {"id-0", "id-1"}
+
+
+# ---------------------------------------------------------------------------
+# List-valued image field — one key per sample from all of its images
+# ---------------------------------------------------------------------------
+
+
+def test_image_key_of_a_list_is_a_tuple_of_image_keys():
+    record = {"img": [IMG1, {"bytes": None, "path": "https://x/y.png"}, "data:image/png;base64,AA"]}
+    key = _image_key(record, "img")
+    assert key == (_image_key({"img": IMG1}, "img"), "https://x/y.png", "data:image/png;base64,AA")
+
+
+def test_image_key_of_an_empty_list_is_none():
+    assert _image_key({"img": []}, "img") is None
+
+
+def test_same_image_list_is_an_exact_duplicate():
+    data = [img_rec("which is larger?", "A", [IMG1, IMG2]) for _ in range(2)]
+    findings = duplicate_questions(data, IMG_FIELDS)
+    assert [f.metadata["duplicate_type"] for f in findings] == ["exact", "exact"]
+    assert all(f.severity == "high" for f in findings)
+
+
+def test_image_lists_differing_in_one_image_are_question_reuse():
+    data = [
+        img_rec("which is larger?", "A", [IMG1, IMG2]),
+        img_rec("which is larger?", "B", [IMG1, IMG3]),
+    ]
+    findings = duplicate_questions(data, IMG_FIELDS)
+    assert [f.metadata["duplicate_type"] for f in findings] == ["question_reuse"] * 2
+    assert all(f.severity == "low" for f in findings)
+
+
+def test_same_question_with_and_without_an_image_is_question_reuse():
+    # A task that mixes image and text-only samples gives the text-only ones an empty list
+    data = [img_rec("what is 2+2?", "4", [IMG1]), img_rec("what is 2+2?", "4", [])]
+    findings = duplicate_questions(data, IMG_FIELDS)
+    assert [f.metadata["duplicate_type"] for f in findings] == ["question_reuse"] * 2
+    assert all(f.severity == "medium" for f in findings)
+
+
+def test_missing_image_next_to_an_image_is_question_reuse():
+    data = [img_rec("is this normal?", "yes", IMG1), {"q": "is this normal?", "a": "no"}]
+    findings = duplicate_questions(data, IMG_FIELDS)
+    assert [f.metadata["duplicate_type"] for f in findings] == ["question_reuse"] * 2
+    assert all(f.severity == "low" for f in findings)

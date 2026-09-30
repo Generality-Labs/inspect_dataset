@@ -14,10 +14,10 @@ class FieldMap:
     """Resolved mapping from logical field roles to dataset column names.
 
     Besides the column roles, it carries dataset-level context that scanners may use, such as
-    the scorers of the inspect_ai task the records came from. ``group`` names the record field
-    whose value is each sample's subset. The population scanners (``inconsistent_format``,
-    ``answer_distribution``, ``binary_question_ratio``) compute their statistics per group
-    when it is set.
+    the column holding each sample's answer choices and the scorers of the inspect_ai task
+    the records came from. ``group`` names the record field whose value is each sample's
+    subset. The population scanners (``inconsistent_format``, ``answer_distribution``,
+    ``binary_question_ratio``) compute their statistics per group when it is set.
     """
 
     question: str
@@ -27,6 +27,8 @@ class FieldMap:
     # Dotted path to the scalar inside a non-scalar answer column, for the answer-text scanners.
     answer_subfield: str | None = None
     group: str | None = None
+    # Column holding each sample's list of answer choices, which a letter answer indexes into.
+    choices: str | None = None
     # Registry names of the task's scorers (e.g. "inspect_ai/choice"). None outside task mode.
     scorers: list[str] | None = None
 

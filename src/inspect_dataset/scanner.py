@@ -128,7 +128,7 @@ def _unmet_requirements(
         unmet["answer"] = f"no non-empty answers in field {fields.answer!r}"
     if fields.image is None:
         unmet["image"] = (
-            "no image field; task scans do not load images from sample input yet"
+            "no image field; no sample in the task has an image"
             if source_type == "inspect_task"
             else "no image field; pass --image-field"
         )
