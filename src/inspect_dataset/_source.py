@@ -4,15 +4,14 @@ While a task builds its dataset, ``capture_sources()`` records two things:
 
 - every raw record that inspect_ai's ``hf_dataset``, ``csv_dataset`` and ``json_dataset``
   turn into samples, keyed by the ``Sample`` objects produced. This join is exact and
-  survives shuffling and filtering.
+  survives shuffling, filtering and ``Sample.model_copy``.
 - every ``datasets.load_dataset`` call and the table it returned, so that samples an eval
   builds by hand can be matched to a row by their id.
 
-Both work by wrapping library functions. The wrappers are installed once and only record
-while a capture is active; otherwise they pass straight through. ``data_to_samples`` is
-private inspect_ai API, so if it moves, record-level joins stop and the id join remains.
-Modules that imported ``load_dataset`` by name before the first capture keep the
-unwrapped function, so their loads are not recorded.
+Both work by wrapping library functions, including every module-level binding of them made
+by ``from ... import``. The wrappers only record while a capture is active; otherwise they
+pass straight through. ``data_to_samples`` is private inspect_ai API, so if it moves,
+record-level joins stop and the id join remains.
 """
 
 from __future__ import annotations
@@ -20,6 +19,7 @@ from __future__ import annotations
 import contextlib
 import contextvars
 import functools
+import sys
 from collections.abc import Callable, Generator, Mapping
 from dataclasses import dataclass, field
 from typing import Any
@@ -101,6 +101,19 @@ def _wrap_load_dataset(original: Callable[..., Any]) -> Callable[..., Any]:
     return load_dataset
 
 
+def _wrap_model_copy(original: Callable[..., Any]) -> Callable[..., Any]:
+    @functools.wraps(original)
+    def model_copy(self: Any, *args: Any, **kwargs: Any) -> Any:
+        copy = original(self, *args, **kwargs)
+        capture = _active.get()
+        if capture is not None and (raw := capture.row_for(self)) is not None:
+            capture.rows[id(copy)] = (copy, raw)
+        return copy
+
+    model_copy.__inspect_dataset_wrapped__ = True  # type: ignore[attr-defined]
+    return model_copy
+
+
 def _describe_load(args: tuple[Any, ...], kwargs: dict[str, Any]) -> dict[str, Any]:
     described: dict[str, Any] = {"path": str(args[0] if args else kwargs.get("path"))}
     if len(args) > 1 and "name" not in kwargs:
@@ -112,24 +125,47 @@ def _describe_load(args: tuple[Any, ...], kwargs: dict[str, Any]) -> dict[str, A
     return described
 
 
+# (name, id(original)) -> (original, wrapper), so a function is only ever wrapped once
+_wrapped: dict[tuple[str, int], tuple[Callable[..., Any], Callable[..., Any]]] = {}
+
+
+def _wrap_everywhere(
+    home: Any, name: str, wrap: Callable[[Callable[..., Any]], Callable[..., Any]]
+) -> None:
+    """Wrap ``home.<name>`` and every module-level binding of the same function object.
+
+    Evals and helpers often import these functions by name (``from datasets import
+    load_dataset``), which copies the reference at import time, so wrapping only the home
+    module would miss them. Module dicts are read directly so lazy modules are not triggered.
+    """
+    current = home.__dict__.get(name)
+    if current is None:
+        return
+    if not getattr(current, "__inspect_dataset_wrapped__", False):
+        _wrapped.setdefault((name, id(current)), (current, wrap(current)))
+    for module in list(sys.modules.values()):
+        bound = getattr(module, "__dict__", {}).get(name)
+        pair = _wrapped.get((name, id(bound))) if bound is not None else None
+        if pair is not None and bound is pair[0]:
+            setattr(module, name, pair[1])
+
+
 def _install() -> None:
     try:
-        import inspect_ai.dataset._sources.csv as csv_source
-        import inspect_ai.dataset._sources.hf as hf_source
-        import inspect_ai.dataset._sources.json as json_source
+        from inspect_ai.dataset import _util
     except ImportError:
-        sources = []
+        pass
     else:
-        sources = [hf_source, csv_source, json_source]
-    for module in sources:
-        original = getattr(module, "data_to_samples", None)
-        if original is not None and not getattr(original, "__inspect_dataset_wrapped__", False):
-            module.data_to_samples = _wrap_data_to_samples(original)  # type: ignore[attr-defined]
+        _wrap_everywhere(_util, "data_to_samples", _wrap_data_to_samples)
+        from inspect_ai.dataset import Sample
+
+        # Evals that rename ids or add sandboxes copy each sample; the copy keeps its row
+        if not getattr(Sample.model_copy, "__inspect_dataset_wrapped__", False):
+            Sample.model_copy = _wrap_model_copy(Sample.model_copy)  # type: ignore[method-assign]
 
     import datasets
 
-    if not getattr(datasets.load_dataset, "__inspect_dataset_wrapped__", False):
-        datasets.load_dataset = _wrap_load_dataset(datasets.load_dataset)  # type: ignore[assignment]
+    _wrap_everywhere(datasets, "load_dataset", _wrap_load_dataset)
 
 
 @contextlib.contextmanager

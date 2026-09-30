@@ -285,3 +285,46 @@ def test_unknown_source_column_lists_the_columns(tmp_path: Path):
     assert result.exit_code == 2
     assert "'nope' is not a column of any source row" in result.output
     assert "answer, explanation, qid, question" in result.output
+
+
+def test_functions_imported_by_name_before_a_capture_are_wrapped(tmp_path: Path, monkeypatch):
+    # inspect_evals' script-dataset helper does `from inspect_ai.dataset._util import
+    # data_to_samples`, binding the unwrapped function before any capture starts.
+    import sys
+    import types
+
+    from inspect_ai.dataset import _util
+
+    from inspect_dataset._source import capture_sources
+
+    with capture_sources():
+        pass  # make sure the wrapper exists
+    original = _util.data_to_samples.__wrapped__
+    helper = types.ModuleType("fake_script_helper")
+    helper.data_to_samples = original  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "fake_script_helper", helper)
+
+    def task() -> Task:
+        samples = helper.data_to_samples(ROWS, _to_sample, False)
+        return Task(dataset=MemoryDataset(samples))
+
+    records, _ = load_inspect_task(task)
+    assert helper.data_to_samples is not original
+    assert [r[SOURCE_FIELD]["qid"] for r in records] == ["q1", "q2", "q3"]
+
+
+def test_copied_samples_keep_their_row(tmp_path: Path):
+    # BBH and BBQ rename ids with sample.model_copy(update=...), which makes new objects
+    path = _jsonl(tmp_path)
+
+    def task() -> Task:
+        dataset = json_dataset(str(path), _to_sample)
+        renamed = [s.model_copy(update={"id": f"sub_{i}"}) for i, s in enumerate(dataset)]
+        return Task(dataset=MemoryDataset(renamed))
+
+    records, _ = load_inspect_task(task)
+    assert [(r["id"], r[SOURCE_FIELD]["qid"]) for r in records] == [
+        ("sub_0", "q1"),
+        ("sub_1", "q2"),
+        ("sub_2", "q3"),
+    ]
