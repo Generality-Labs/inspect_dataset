@@ -14,7 +14,7 @@ import inspect_dataset.cli as cli_mod
 from inspect_dataset._types import FieldMap
 from inspect_dataset.cli import cli
 from inspect_dataset.report import print_report, save_findings
-from inspect_dataset.scanner import run_scanners, run_scanners_async
+from inspect_dataset.scanner import LLMScannerDef, run_scanners, run_scanners_async
 
 _RECORDS = [
     {"q": "What is 2+2?", "a": "4"},
@@ -164,5 +164,26 @@ def test_cli_task_mode_field_override_keeps_scorers(tmp_path: Path, monkeypatch)
     summary = _scan(
         tmp_path, "some.module@t", ["--question-field", "input", "--answer-field", "target"]
     )
+    assert summary["task"] == "some.module@t"
+    assert summary["scorers"] == ["inspect_ai/f1"]
+
+
+def test_cli_task_mode_with_llm_scanner_records_task_and_scorers(tmp_path: Path, monkeypatch):
+    def fake_load_task_from_spec(spec, limit=None):
+        records = [{"input": r["q"], "target": r["a"], "id": i} for i, r in enumerate(_RECORDS)]
+        fields = FieldMap(question="input", answer="target", id="id", scorers=["inspect_ai/f1"])
+        return records, fields
+
+    async def no_findings(records, fields):
+        return []
+
+    monkeypatch.setattr(cli_mod, "load_task_from_spec", fake_load_task_from_spec)
+    monkeypatch.setattr(
+        cli_mod,
+        "LLM_SCANNER_FACTORIES",
+        {"fake_llm": lambda model: LLMScannerDef("fake_llm", no_findings)},
+    )
+    summary = _scan(tmp_path, "some.module@t", ["--model", "mockllm/model"])
+    assert summary["scanner_status"]["fake_llm"] == {"status": "ran"}
     assert summary["task"] == "some.module@t"
     assert summary["scorers"] == ["inspect_ai/f1"]
