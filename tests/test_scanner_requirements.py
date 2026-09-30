@@ -264,3 +264,15 @@ def test_builtins_on_a_dataset_without_answers():
         "text_layer_recall": "not_applicable",
         "numeric_provenance": "not_applicable",
     }
+
+
+def test_scanners_command_lists_requirements():
+    from click.testing import CliRunner
+
+    from inspect_dataset.cli import cli
+
+    result = CliRunner().invoke(cli, ["scanners"], env={"COLUMNS": "200"})
+    assert result.exit_code == 0
+    lines = result.output.splitlines()
+    assert "Requires" in next(line for line in lines if "Description" in line)
+    assert "artifacts, answer" in next(line for line in lines if "text_layer_recall" in line)

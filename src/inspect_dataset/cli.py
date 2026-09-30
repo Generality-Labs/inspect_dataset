@@ -447,14 +447,15 @@ def list_scanners() -> None:
     table = Table(title="Registered Scanners")
     table.add_column("Scanner", style="bold")
     table.add_column("Type")
+    table.add_column("Requires")
     table.add_column("Description")
 
     for s in BUILTIN_SCANNERS:
-        table.add_row(s.name, "static", s.description)
+        table.add_row(s.name, "static", ", ".join(s.requires), s.description)
     for name, factory in LLM_SCANNER_FACTORIES.items():
         # Build a temporary instance to read its description
-        desc = factory("_placeholder").description
-        table.add_row(name, "llm", desc)
+        llm = factory("_placeholder")
+        table.add_row(name, "llm", ", ".join(llm.requires), llm.description)
 
     console.print(table)
 
