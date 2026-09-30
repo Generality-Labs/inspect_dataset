@@ -16,12 +16,10 @@ _CODE_BLOCK = re.compile(r"```.*?(?:```|\Z)|\[asy\].*?\[/asy\]", re.DOTALL)
 
 
 def _find_bad_chars(text: str) -> list[str]:
-    code = [m.span() for m in _CODE_BLOCK.finditer(text)]
+    text = _CODE_BLOCK.sub(lambda m: m.group().replace("\t", ""), text)
     seen: list[str] = []
-    for pos, ch in enumerate(text):
+    for ch in text:
         cp = ord(ch)
-        if ch == "\t" and any(start <= pos < end for start, end in code):
-            continue
         if (cp in _CONTROL_CHARS or cp == 0x7F) and repr(ch) not in seen:  # 0x7F = DEL
             seen.append(repr(ch))
     return seen
