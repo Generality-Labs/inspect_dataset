@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `mojibake` scanner: flags UTF-8 text decoded with the wrong codec (Windows-1252, Latin-1 or Mac Roman) in questions, answers and each choice. It reports a span only when re-encoding it with that codec and decoding as UTF-8 gives ordinary text, and it records the repair. It finds 15 fields in CoCoNot and 12 in MMLU-Pro ([#39](https://github.com/Generality-Labs/inspect_dataset/issues/39)).
+
 ## [0.3.4] - 2026-04-04
 
 ### Added
