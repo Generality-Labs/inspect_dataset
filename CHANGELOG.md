@@ -22,7 +22,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - HF-mode scans pick the split and config when they are not given. `--split` now defaults to the dataset's only split, or to `train` when there are several. `--config` defaults to the only config or the dataset's default config. A dataset with several splits and no `train`, or several configs and no default, fails with a message that lists the choices and names the option to pass ([#32](https://github.com/Generality-Labs/inspect_dataset/issues/32)).
 - Task-mode and local scans record `split` as `null` unless `--split` is given. Task-mode scans used to record the unused `--split` default, `train` ([#32](https://github.com/Generality-Labs/inspect_dataset/issues/32)).
-- Task-mode scans of multi-subset tasks now group the population scanners by subset without being asked. On BBH, `inconsistent_format` falls from 1,420 findings to 1. Pass `--no-group-by` to get the pooled statistics back ([#36](https://github.com/Generality-Labs/inspect_dataset/issues/36)).
+- Task-mode scans of multi-subset tasks now group the population scanners by subset without being asked. On BBH, `inconsistent_format` falls from 1,420 findings to 1. Pass `--no-group-by` to get the pooled statistics back. In Python, `load_inspect_task` now sets `FieldMap.group` the same way, so `run_scanners` groups too. Set `fields.group = None` for pooled statistics ([#36](https://github.com/Generality-Labs/inspect_dataset/issues/36)).
 
 ### Fixed
 

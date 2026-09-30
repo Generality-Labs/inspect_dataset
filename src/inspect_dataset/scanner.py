@@ -159,7 +159,9 @@ def run_scanners(
     """Run scanners synchronously. Raises if any LLM scanners are included.
 
     ``ScanRun.group_by`` is taken from ``fields.group``. ``group_by_source`` says how it
-    was chosen (``"option"`` or ``"auto"``) and is dropped when there is no group.
+    was chosen (``"option"`` or ``"auto"``) and is dropped when there is no group. It is
+    not inferred: ``fields`` from ``load_inspect_task`` may already carry a detected
+    group, and the run then records ``group_by_source=None`` unless the caller passes it.
     """
     llm = [s for s in scanners if isinstance(s, LLMScannerDef)]
     if llm:
