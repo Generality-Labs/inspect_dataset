@@ -82,6 +82,19 @@ def test_tab_outside_code_still_flagged():
     assert findings[0].metadata["bad_chars"] == ["'\\t'"]
 
 
+def test_tab_after_closed_fence_still_flagged():
+    text = "```\n\tx = 1\n```\nthree\tdresses"
+    findings = encoding_issues(rec(text, "ok"), FIELDS)
+    assert len(findings) == 1
+
+
+def test_tab_between_asy_blocks_still_flagged():
+    # MATH math_0a71fa24 has tabs just after a closing [/asy].
+    text = "[asy]\n\tdraw(a);\n[/asy] \tWhat fraction?\n[asy]\n\tdraw(b);\n[/asy]"
+    findings = encoding_issues(rec(text, "1/2"), FIELDS)
+    assert len(findings) == 1
+
+
 def test_other_control_char_inside_code_still_flagged():
     text = '[asy]\n\tlabel("$\x0crac{1}{2}$");\n[/asy]'
     findings = encoding_issues(rec(text, "3"), FIELDS)
