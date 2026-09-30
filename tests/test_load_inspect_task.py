@@ -424,8 +424,8 @@ def test_real_inspect_sample_images_feed_the_image_scanners(tmp_path: Path):
     assert mime[0].metadata["actual_mime"] == "image/png"
 
     dups = duplicate_questions(records, fields)
-    exact = sorted(f.sample_id for f in dups if f.metadata["duplicate_type"] == "exact")
-    assert exact == ["s2", "s3"]
+    exact = [f.metadata["duplicate_ids"] for f in dups if f.metadata["duplicate_type"] == "exact"]
+    assert exact == [["s2", "s3"]]
 
 
 # ---------------------------------------------------------------------------
