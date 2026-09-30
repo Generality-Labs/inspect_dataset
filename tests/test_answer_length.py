@@ -119,6 +119,18 @@ def test_star_subfield_measures_each_string_in_a_list():
     assert findings[0].metadata["element_index"] == 1
 
 
+def test_array_answer_suggests_star_and_star_measures_each_element():
+    np = pytest.importorskip("numpy")
+    recs = [{"q": "q", "a": np.array(["yes", "one two three four five"])}]
+    with pytest.raises(ScannerNotApplicable, match=r"ndarray.*pass --answer-subfield '\*'"):
+        answer_length(recs, FIELDS)
+
+    findings = answer_length(recs, FieldMap(question="q", answer="a", answer_subfield="*"))
+    assert len(findings) == 1
+    assert findings[0].metadata["answer"] == "one two three four five"
+    assert findings[0].metadata["element_index"] == 1
+
+
 def test_subfield_resolving_to_non_scalar_is_not_applicable():
     fields = FieldMap(question="q", answer="a", answer_subfield="labels")
     recs = [{"q": "q", "a": {"labels": [{"label": [0, 1]}]}}]

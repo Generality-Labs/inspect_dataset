@@ -17,8 +17,16 @@ def is_scalar(value: Any) -> bool:
     return getattr(value, "ndim", 0) == 0
 
 
+def _as_list(value: Any) -> Any:
+    """An array of one or more dimensions as a nested list, so it is handled like a list."""
+    if getattr(value, "ndim", 0) >= 1 and hasattr(value, "tolist"):
+        return value.tolist()
+    return value
+
+
 def _resolve(value: Any, path: list[str]) -> list[Any]:
     """Values at a dotted path, mapping over lists on the way. ``*`` selects the value itself."""
+    value = _as_list(value)
     if isinstance(value, list | tuple):
         return [leaf for item in value for leaf in _resolve(item, path)]
     if not path:
@@ -35,6 +43,7 @@ def _hint(value: Any, subfield: str | None) -> str:
     action = (
         "pass --answer-subfield" if subfield is None else f"extend --answer-subfield {subfield!r}"
     )
+    value = _as_list(value)
     if isinstance(value, list | tuple):
         first = next((v for v in value if v is not None), None)
         if isinstance(first, Mapping):
