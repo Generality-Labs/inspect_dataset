@@ -114,3 +114,42 @@ def test_ungrouped_finding_is_unchanged():
     f = binary_question_ratio(records(*["yes"] * 6, *["no"] * 4), FIELDS)[0]
     assert "group" not in f.metadata
     assert f.explanation.startswith("10/10 samples (100%) have binary yes/no answers.")
+
+
+# ---------------------------------------------------------------------------
+# Letter targets with choices (issue #33)
+# ---------------------------------------------------------------------------
+
+CHOICE_FIELDS = FieldMap(question="q", answer="a", choices="choices")
+
+
+def mc_records(*rows: tuple[str, list[str]]) -> list[dict]:
+    return [{"q": f"question {i}", "a": a, "choices": c} for i, (a, c) in enumerate(rows)]
+
+
+def test_yes_no_choices_are_measured_as_choice_text():
+    rows = [("A", ["Yes", "No"])] * 7 + [("B", ["Yes", "No"])] * 3
+    findings = binary_question_ratio(mc_records(*rows), CHOICE_FIELDS)
+    assert len(findings) == 1
+    m = findings[0].metadata
+    assert (m["yes_count"], m["no_count"], m["binary_count"]) == (7, 3, 10)
+    assert m["measured"] == "choice_text"
+    assert "choice text" in findings[0].explanation
+
+
+def test_letters_without_choices_are_not_binary():
+    rows = [("A", ["Yes", "No"])] * 7 + [("B", ["Yes", "No"])] * 3
+    assert binary_question_ratio(mc_records(*rows), FIELDS) == []
+
+
+def test_open_choice_texts_no_finding():
+    rows = [("A", ["mri", "ct"]), ("B", ["axial", "coronal"])] * 5
+    assert binary_question_ratio(mc_records(*rows), CHOICE_FIELDS) == []
+
+
+def test_text_yes_no_targets_with_choices_are_unchanged():
+    rows = [("yes", ["yes", "no"])] * 6 + [("no", ["yes", "no"])] * 4
+    findings = binary_question_ratio(mc_records(*rows), CHOICE_FIELDS)
+    plain = binary_question_ratio(mc_records(*rows), FIELDS)
+    assert [f.to_dict() for f in findings] == [f.to_dict() for f in plain]
+    assert "measured" not in findings[0].metadata

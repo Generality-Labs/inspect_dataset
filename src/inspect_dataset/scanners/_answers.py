@@ -1,7 +1,7 @@
 """Answer values as the strings that the answer-text scanners measure.
 
-Also resolves a letter answer, such as the target of a ``choice()``-scored task, to the text of
-the choice it names.
+Also checks whether the task's scorer compares answer text at all, and resolves a letter
+answer, such as the target of a ``choice()``-scored task, to the text of the choice it names.
 """
 
 from __future__ import annotations
@@ -12,6 +12,35 @@ from typing import Any
 
 from inspect_dataset._types import FieldMap, Record
 from inspect_dataset.scanner import ScannerNotApplicable
+
+# Scorers that compare the answer text itself, so its length and format affect the score.
+# Add a registry name here to run answer_length and inconsistent_format under that scorer.
+VERBATIM_SCORERS = frozenset(
+    {
+        "inspect_ai/exact",
+        "inspect_ai/match",
+        "inspect_ai/includes",
+        "inspect_ai/pattern",
+    }
+)
+
+
+def require_verbatim_scorer(fields: FieldMap, scanner: str) -> None:
+    """Check that the task's scorer compares answer text verbatim.
+
+    Passes when the scorer is unknown (``fields.scorers`` is None, outside task mode) or when
+    any of the task's scorers is in ``VERBATIM_SCORERS``.
+
+    Raises:
+        ScannerNotApplicable: if the task has no scorer, or none of its scorers compare text.
+    """
+    scorers = fields.scorers
+    if scorers is None or any(s in VERBATIM_SCORERS for s in scorers):
+        return
+    assumption = f"{scanner} assumes a scorer that compares answer text verbatim"
+    if not scorers:
+        raise ScannerNotApplicable(f"{assumption}; this task has no scorer")
+    raise ScannerNotApplicable(f"{assumption}; this task scores with {', '.join(scorers)}")
 
 
 def is_scalar(value: Any) -> bool:
@@ -101,6 +130,9 @@ def subfield_metadata(fields: FieldMap, element_index: int) -> dict[str, Any]:
     return {"answer_subfield": fields.answer_subfield, "element_index": element_index}
 
 
+CHOICE_TEXT_NOTE = "measured as the choice text each target letter names"
+
+
 def resolve_choice(answer: Any, choices: Any) -> str | None:
     """The choice text a letter answer names ("A" is the first choice), or None.
 
@@ -139,6 +171,24 @@ def resolved_answer(record: Record, fields: FieldMap) -> Any:
     if isinstance(answer, list | tuple):
         return [_resolve_or_keep(a, choices) for a in answer]
     return _resolve_or_keep(answer, choices)
+
+
+def resolved_scalar_answer(record: Record, fields: FieldMap) -> Any:
+    """The record's answer, with a letter answer replaced by the choice text it names.
+
+    Unlike ``resolved_answer``, a list answer is returned as it is, matching ``choice_letters``.
+    """
+    return _resolve_or_keep(record.get(fields.answer), record_choices(record, fields) or ())
+
+
+def choice_letters(records: list[Record], fields: FieldMap) -> list[str]:
+    """Each row's target letter in upper case, or "" when it names none of the row's choices."""
+    letters = []
+    for record in records:
+        answer = record.get(fields.answer)
+        resolves = resolve_choice(answer, record_choices(record, fields)) is not None
+        letters.append(str(answer).strip().upper() if resolves else "")
+    return letters
 
 
 def _resolve_or_keep(answer: Any, choices: Sequence[Any]) -> Any:

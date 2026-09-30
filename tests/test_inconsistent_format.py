@@ -247,3 +247,30 @@ def test_unhashable_group_values_are_not_applicable():
     recs = [{"q": "q", "a": "yes", "subset": ["x"]} for _ in range(5)]
     with pytest.raises(ScannerNotApplicable, match=r"'subset'.*list"):
         inconsistent_format(recs, GROUPED)
+
+
+# ---------------------------------------------------------------------------
+# The task's scorer (issue #33)
+# ---------------------------------------------------------------------------
+
+
+def test_non_verbatim_scorer_is_not_applicable():
+    fields = FieldMap(question="q", answer="a", scorers=["inspect_ai/choice"])
+    recs = records("one two three four five six", "Yes", "yes", "yes", "yes.")
+    with pytest.raises(ScannerNotApplicable, match="this task scores with inspect_ai/choice"):
+        inconsistent_format(recs, fields)
+
+
+def test_scorer_gate_comes_before_the_answer_type_check():
+    fields = FieldMap(question="q", answer="a", scorers=["inspect_ai/f1"])
+    recs = [{"q": "q", "a": ["a list", "of answers"]}]
+    with pytest.raises(ScannerNotApplicable, match="scores with inspect_ai/f1"):
+        inconsistent_format(recs, fields)
+
+
+def test_verbatim_scorer_measures_as_before():
+    fields = FieldMap(question="q", answer="a", scorers=["inspect_ai/exact", "inspect_ai/f1"])
+    recs = records("one two three four five six", "yes", "no", "blue", "red", "green", "Big")
+    findings = inconsistent_format(recs, fields)
+    assert findings
+    assert findings == inconsistent_format(recs, FIELDS)

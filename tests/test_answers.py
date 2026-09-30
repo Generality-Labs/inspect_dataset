@@ -5,7 +5,15 @@ from __future__ import annotations
 import pytest
 
 from inspect_dataset._types import FieldMap
-from inspect_dataset.scanners._answers import record_choices, resolve_choice, resolved_answer
+from inspect_dataset.scanner import ScannerNotApplicable
+from inspect_dataset.scanners._answers import (
+    VERBATIM_SCORERS,
+    choice_letters,
+    record_choices,
+    require_verbatim_scorer,
+    resolve_choice,
+    resolved_answer,
+)
 
 CHOICES = ["mri", "ct", "xray"]
 
@@ -60,3 +68,65 @@ def test_resolved_answer_maps_over_a_list_answer():
     fields = FieldMap(question="q", answer="targets", choices="choices")
     record = {"targets": ["A", "C"], "choices": CHOICES}
     assert resolved_answer(record, fields) == ["mri", "xray"]
+
+
+def test_choice_letters_marks_rows_whose_target_names_a_choice():
+    fields = FieldMap(question="q", answer="a", choices="choices")
+    records = [
+        {"a": "b", "choices": CHOICES},
+        {"a": "D", "choices": CHOICES},
+        {"a": "mri", "choices": CHOICES},
+        {"a": "A"},
+    ]
+    assert choice_letters(records, fields) == ["B", "", "", ""]
+    assert choice_letters(records, FieldMap(question="q", answer="a")) == ["", "", "", ""]
+
+
+# ---------------------------------------------------------------------------
+# Scorer gate for the answer-text rules (issue #33)
+# ---------------------------------------------------------------------------
+
+
+def _scored_with(scorers: list[str] | None) -> FieldMap:
+    return FieldMap(question="q", answer="a", scorers=scorers)
+
+
+def test_unknown_scorer_applies():
+    require_verbatim_scorer(_scored_with(None), "answer_length")
+
+
+@pytest.mark.parametrize("scorer", sorted(VERBATIM_SCORERS))
+def test_verbatim_scorer_applies(scorer):
+    require_verbatim_scorer(_scored_with([scorer]), "answer_length")
+
+
+def test_verbatim_scorers_are_the_text_comparing_builtins():
+    expected = {"inspect_ai/exact", "inspect_ai/match", "inspect_ai/includes", "inspect_ai/pattern"}
+    assert expected == VERBATIM_SCORERS
+
+
+def test_verbatim_scorer_alongside_another_applies():
+    require_verbatim_scorer(_scored_with(["inspect_ai/exact", "inspect_ai/f1"]), "answer_length")
+
+
+def test_non_verbatim_scorer_is_not_applicable_and_named():
+    with pytest.raises(ScannerNotApplicable) as excinfo:
+        require_verbatim_scorer(_scored_with(["inspect_ai/choice"]), "answer_length")
+    assert str(excinfo.value) == (
+        "answer_length assumes a scorer that compares answer text verbatim; "
+        "this task scores with inspect_ai/choice"
+    )
+
+
+def test_every_non_verbatim_scorer_is_named():
+    with pytest.raises(ScannerNotApplicable, match=r"scores with inspect_ai/f1, custom_scorer$"):
+        require_verbatim_scorer(_scored_with(["inspect_ai/f1", "custom_scorer"]), "x")
+
+
+def test_task_without_scorer_is_not_applicable():
+    with pytest.raises(ScannerNotApplicable) as excinfo:
+        require_verbatim_scorer(_scored_with([]), "inconsistent_format")
+    assert str(excinfo.value) == (
+        "inconsistent_format assumes a scorer that compares answer text verbatim; "
+        "this task has no scorer"
+    )
