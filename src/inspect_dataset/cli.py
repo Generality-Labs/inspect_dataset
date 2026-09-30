@@ -9,7 +9,8 @@ import click
 from dotenv import load_dotenv
 from rich.console import Console
 
-from inspect_dataset._source import SourceInfo
+from inspect_dataset._source import SOURCE_FIELD, SourceInfo
+from inspect_dataset._types import Record
 from inspect_dataset.loader import (
     DatasetSelectionError,
     is_task_spec,
@@ -70,6 +71,32 @@ def _load_scanner_module(module_name: str) -> list[ScannerDef]:
     return defs
 
 
+_SOURCE_PREFIX = "source."
+
+
+def _copy_source_columns(records: list[Record], names: list[str | None]) -> None:
+    """Copy each ``source.<column>`` option value out of the raw rows into the records.
+
+    Task records keep their raw dataset row under ``__source__``. Naming ``source.<column>``
+    in a field option or ``--group-by`` copies that column to a record field of that name,
+    so every scanner can use it.
+    """
+    for name in dict.fromkeys(n for n in names if n and n.startswith(_SOURCE_PREFIX)):
+        column = name[len(_SOURCE_PREFIX) :]
+        rows = [r[SOURCE_FIELD] for r in records if SOURCE_FIELD in r]
+        if not any(column in row for row in rows):
+            available = sorted({c for row in rows for c in row})
+            hint = (
+                f"Source columns: {', '.join(available)}"
+                if available
+                else "No sample was joined to a source row"
+            )
+            raise click.BadParameter(f"{column!r} is not a column of any source row. {hint}.")
+        for record in records:
+            if SOURCE_FIELD in record:
+                record[name] = record[SOURCE_FIELD].get(column)
+
+
 @click.group()
 def cli() -> None:
     """inspect-dataset — dataset quality scanner for AI evaluation benchmarks."""
@@ -101,12 +128,18 @@ def cli() -> None:
 @click.option(
     "--question-field",
     default=None,
-    help="Column name for questions (auto-detected if omitted).",
+    help=(
+        "Column name for questions (auto-detected if omitted). For a task, "
+        "'source.<column>' names a column of the raw dataset row."
+    ),
 )
 @click.option(
     "--answer-field",
     default=None,
-    help="Column name for answers (auto-detected if omitted).",
+    help=(
+        "Column name for answers (auto-detected if omitted). For a task, "
+        "'source.<column>' names a column of the raw dataset row."
+    ),
 )
 @click.option(
     "--answer-subfield",
@@ -141,7 +174,8 @@ def cli() -> None:
         "'subject'). inconsistent_format, answer_distribution and binary_question_ratio "
         "then compute their statistics per subset instead of over the whole dataset. "
         "In task mode the subset key is detected from the sample metadata when exactly "
-        "one of dataset_name, subset, subject or category has two or more values."
+        "one of dataset_name, subset, subject or category has two or more values. "
+        "'source.<column>' groups by a column of the raw dataset row."
     ),
 )
 @click.option(
@@ -312,6 +346,9 @@ def scan(
         console.print(f"Loading inspect_ai task [bold]{dataset}[/bold]...")
         source_info = SourceInfo()
         records, fields = load_task_from_spec(dataset, limit=limit, source_info=source_info)
+        _copy_source_columns(
+            records, [question_field, answer_field, id_field, image_field, group_by]
+        )
         # Overrides replace only the roles given, so the rest of the task's field map stays
         overrides = {
             role: value

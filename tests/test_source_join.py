@@ -256,3 +256,32 @@ def test_samples_json_does_not_write_the_raw_rows(tmp_path: Path):
     assert result.exit_code == 0, result.output
     samples = json.loads((out / "samples.json").read_text())
     assert all(SOURCE_FIELD not in s and "explanation" not in json.dumps(s) for s in samples)
+
+
+# ---------------------------------------------------------------------------
+# source.<column> in field options and --group-by
+# ---------------------------------------------------------------------------
+
+
+def test_answer_field_can_name_a_source_column(tmp_path: Path):
+    result, out = _scan_task(
+        tmp_path, "--answer-field", "source.explanation", "--scanners", "encoding_issues"
+    )
+    assert result.exit_code == 0, result.output
+    samples = json.loads((out / "samples.json").read_text())
+    assert [s["answer"] for s in samples] == [r["explanation"] for r in ROWS]
+    assert "answer=source.explanation" in result.output
+
+
+def test_group_by_can_name_a_source_column(tmp_path: Path):
+    result, out = _scan_task(tmp_path, "--group-by", "source.qid", "--scanners", "encoding_issues")
+    assert result.exit_code == 0, result.output
+    summary = json.loads((out / "scan_summary.json").read_text())
+    assert (summary["group_by"], summary["group_by_source"]) == ("source.qid", "option")
+
+
+def test_unknown_source_column_lists_the_columns(tmp_path: Path):
+    result, _ = _scan_task(tmp_path, "--answer-field", "source.nope")
+    assert result.exit_code == 2
+    assert "'nope' is not a column of any source row" in result.output
+    assert "answer, explanation, qid, question" in result.output
