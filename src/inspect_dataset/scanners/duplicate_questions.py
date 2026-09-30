@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
+from functools import cache
 from typing import Any
 
 from inspect_dataset._types import FieldMap, Finding, Record, Severity
@@ -27,7 +28,11 @@ def _scan(records: list[Record], fields: FieldMap) -> list[Finding]:
 
     if fields.image is not None:
         return [f for key, group in groups for f in _image_group_findings(key, group, fields)]
-    image_column = _image_like_column(records) if fields.scorers is None else None
+
+    @cache
+    def image_column() -> str | None:
+        return _image_like_column(records) if fields.scorers is None else None
+
     return [_text_group_finding(key, group, fields, image_column) for key, group in groups]
 
 
@@ -108,12 +113,14 @@ def _image_group_findings(key: TextKey, group: Group, fields: FieldMap) -> list[
 
 
 def _text_group_finding(
-    key: TextKey, group: Group, fields: FieldMap, image_column: str | None
+    key: TextKey, group: Group, fields: FieldMap, image_column: Callable[[], str | None]
 ) -> Finding:
     """Without an image field, classify records sharing their text by answer agreement.
 
-    ``image_column`` is an HF column that looks like images, named in the advice to pass
-    --image-field. Task mode already compares its images, so it never gets that advice.
+    ``image_column`` gives an HF column that looks like images, named in the advice to pass
+    --image-field. It is called only for a group whose answers disagree, since finding the
+    column reads every record. Task mode already compares its images, so it never gets that
+    advice.
     """
     agree = _answers_agree(group, fields)
     if agree:
@@ -125,12 +132,13 @@ def _text_group_finding(
         )
     else:
         severity = "low"
+        column = image_column()
         explanation = (
             f"{len(group)} samples share the {_subject(key)}, with different answers "
             f"(at indices {_indices(group)}). "
             + (
-                f"If they differ by image, pass --image-field {image_column} to compare images."
-                if image_column is not None
+                f"If they differ by image, pass --image-field {column} to compare images."
+                if column is not None
                 else "Check whether the answers conflict."
             )
         )

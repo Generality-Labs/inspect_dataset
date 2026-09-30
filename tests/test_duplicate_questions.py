@@ -1,4 +1,5 @@
 import base64
+import importlib
 
 from inspect_dataset._types import FieldMap
 from inspect_dataset.scanners.duplicate_questions import duplicate_questions
@@ -358,3 +359,19 @@ def test_no_image_field_advice_in_task_mode():
     fields = FieldMap(question="q", answer="a", scorers=["inspect_ai/match"])
     [finding] = duplicate_questions(conflicting(scan={"bytes": b"x", "path": None}), fields)
     assert "--image-field" not in finding.explanation
+
+
+def test_image_like_column_is_looked_for_only_when_answers_disagree(monkeypatch):
+    module = importlib.import_module("inspect_dataset.scanners.duplicate_questions")
+    calls = []
+    original = module._image_like_column
+
+    def counting(records):
+        calls.append(1)
+        return original(records)
+
+    monkeypatch.setattr(module, "_image_like_column", counting)
+    duplicate_questions(recs(("same?", "yes"), ("same?", "yes")), FIELDS)
+    assert calls == []
+    duplicate_questions(conflicting() + recs(("other?", "a"), ("other?", "b")), FIELDS)
+    assert calls == [1]
