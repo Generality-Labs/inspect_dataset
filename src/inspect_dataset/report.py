@@ -164,7 +164,11 @@ def _as_text(value: Any) -> str:
     if value is None:
         return ""
     if isinstance(value, Mapping | list | tuple):
-        return json.dumps(value, indent=2, ensure_ascii=False, default=_json_default)
+        try:
+            return json.dumps(value, indent=2, ensure_ascii=False, default=_json_default)
+        except (TypeError, ValueError):
+            # Non-string dict keys or a circular value: a repr beats losing the scan output
+            return str(value)
     return str(value)
 
 

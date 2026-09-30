@@ -190,3 +190,11 @@ def test_samples_never_contain_bytes():
 def test_samples_keep_scalar_rendering():
     samples = _samples([{"q": "Q", "a": True}, {"q": "Q", "a": 1.5}], FieldMap("q", "a"))
     assert [s["answer"] for s in samples] == ["True", "1.5"]
+
+
+def test_samples_fall_back_to_str_for_values_json_cannot_encode():
+    circular: list = ["x"]
+    circular.append(circular)
+    records = [{"q": "Q", "a": {(1, 2): "pair"}}, {"q": "Q", "a": circular}]
+    samples = _samples(records, FieldMap(question="q", answer="a"))
+    assert [s["answer"] for s in samples] == ["{(1, 2): 'pair'}", "['x', [...]]"]
