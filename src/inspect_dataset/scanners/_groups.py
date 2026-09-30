@@ -63,7 +63,8 @@ def population_groups(
         largest = max(len(non_empty) for _, non_empty in groups)
         raise ScannerNotApplicable(
             f"{scanner} needs at least {MIN_GROUP_SIZE} answers in a group, but every group "
-            f"of {fields.group!r} has fewer than {MIN_GROUP_SIZE} (largest: {largest})"
+            f"of {fields.group!r} has fewer than {MIN_GROUP_SIZE} (largest: {largest}); "
+            "scan without grouping (--no-group-by) to measure the dataset as a whole"
         )
     return measured
 

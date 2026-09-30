@@ -122,7 +122,7 @@ def test_groups_below_minimum_size_are_skipped():
 
 def test_all_groups_below_minimum_size_is_not_applicable():
     recs = grouped_records(a=["yes"] * 5, b=["no"] * 5)
-    with pytest.raises(ScannerNotApplicable, match=r"fewer than 20"):
+    with pytest.raises(ScannerNotApplicable, match=r"fewer than 20.*--no-group-by"):
         answer_distribution(recs, GROUPED)
 
 
