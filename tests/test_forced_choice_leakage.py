@@ -220,3 +220,16 @@ def test_empty_choices_still_scanned():
     q = "is this an mri or a ct scan?"
     assert len(forced_choice_leakage([{"q": q, "a": "mri", "choices": []}], FIELDS)) == 1
     assert len(forced_choice_leakage([{"q": q, "a": "mri", "choices": None}], FIELDS)) == 1
+
+
+def test_long_option_next_to_or_flagged():
+    q = (
+        "Question: Which occured first, the Battle of Las Navas de Tolosa "
+        "or king Fernando III gave a new fuero to the city?"
+    )
+    f = forced_choice_leakage(rec(q, "Battle of Las Navas de Tolosa"), FIELDS)
+    assert len(f) == 1
+    assert "battle of las navas de tolosa" in f[0].metadata["options"]
+    after = "Mengistu was accused of infiltrating into Somali"
+    q = f"Question: What event happened first, separatist struck government outposts or {after}?"
+    assert len(forced_choice_leakage(rec(q, after), FIELDS)) == 1

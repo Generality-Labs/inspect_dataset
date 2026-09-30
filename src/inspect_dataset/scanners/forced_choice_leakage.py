@@ -20,7 +20,8 @@ _BOUNDARY = re.compile(r"(,)(?=\s|$)|[;:](?=\s|$)|[()\[\]{}\"\u201c\u201d?!]")
 # Words that open a list of alternatives, so an option cannot extend past them.
 _OPENERS = frozenset({"or", "either", "whether"})
 _PHRASE_ENDS = _OPENERS | {_COMMA, _STOP}
-_OPTION_TOKENS = 5
+# The head-noun rule only applies to an option phrase this short or shorter.
+_HEAD_NOUN_PHRASE_TOKENS = 5
 
 
 def _tokens(text: str) -> list[str]:
@@ -45,9 +46,6 @@ def _question_sentence(text: str) -> str | None:
 class _Option:
     tokens: list[str]
     after_or: bool
-    # The phrase stops at punctuation or the next "or", not at the token limit,
-    # so its last token is a real phrase boundary (the head noun).
-    complete: bool
 
 
 def _stream(sentence: str) -> list[str]:
@@ -74,8 +72,8 @@ def _extract_or_options(sentence: str) -> list[_Option]:
     """Return the phrases on either side of each "or" in ``sentence``.
 
     For "is this an MRI or a CT scan?", returns "is this mri" before the "or"
-    and "ct scan" after it. Each phrase holds at most a few tokens and stops
-    at clause punctuation. In a list such as "A, B, or C", every item counts.
+    and "ct scan" after it. Each phrase stops at clause punctuation or the
+    next "or". In a list such as "A, B, or C", every item counts.
     """
     stream = _stream(sentence)
     options: list[_Option] = []
@@ -84,21 +82,18 @@ def _extract_or_options(sentence: str) -> list[_Option]:
             continue
         before, boundary = _phrase_before(stream, i)
         if before:
-            options.append(_Option(before[-_OPTION_TOKENS:], after_or=False, complete=False))
+            options.append(_Option(before, after_or=False))
         else:
             while boundary >= 0 and stream[boundary] == _COMMA:
                 before, boundary = _phrase_before(stream, boundary)
                 if before:
-                    options.append(
-                        _Option(before[-_OPTION_TOKENS:], after_or=False, complete=False)
-                    )
+                    options.append(_Option(before, after_or=False))
         end = i + 1
         while end < len(stream) and stream[end] not in _PHRASE_ENDS:
             end += 1
         after = stream[i + 1 : end]
         if after:
-            complete = len(after) <= _OPTION_TOKENS
-            options.append(_Option(after[:_OPTION_TOKENS], after_or=True, complete=complete))
+            options.append(_Option(after, after_or=True))
     return options
 
 
@@ -106,14 +101,15 @@ def _answer_matches_option(answer: list[str], option: _Option) -> bool:
     """Return True if the answer sits in the option at a token boundary.
 
     The answer must touch the "or" (the end of the phrase before it, the start
-    of the phrase after it), or be the head noun that ends the phrase after it.
+    of the phrase after it), or be the head noun that ends a short phrase after
+    it. In a long phrase the last words are less likely to be the head noun.
     """
     n = len(answer)
     o = option.tokens
     if n > len(o):
         return False
     if option.after_or:
-        return o[:n] == answer or (option.complete and o[-n:] == answer)
+        return o[:n] == answer or (len(o) <= _HEAD_NOUN_PHRASE_TOKENS and o[-n:] == answer)
     return o[-n:] == answer
 
 
