@@ -130,6 +130,24 @@ def cli() -> None:
     ),
 )
 @click.option(
+    "--group-by",
+    default=None,
+    metavar="FIELD",
+    help=(
+        "Record field that names each sample's subset (e.g. a metadata key such as "
+        "'subject'). inconsistent_format, answer_distribution and binary_question_ratio "
+        "then compute their statistics per subset instead of over the whole dataset. "
+        "In task mode the subset key is detected from the sample metadata when exactly "
+        "one of dataset_name, subset, subject or category has two or more values."
+    ),
+)
+@click.option(
+    "--no-group-by",
+    is_flag=True,
+    default=False,
+    help="Do not group by a subset key detected from task metadata.",
+)
+@click.option(
     "--scanners",
     default=None,
     help=(
@@ -195,6 +213,8 @@ def scan(
     answer_subfield: str | None,
     id_field: str | None,
     image_field: str | None,
+    group_by: str | None,
+    no_group_by: bool,
     scanners: str | None,
     scanner_modules: tuple[str, ...],
     model: str | None,
@@ -215,6 +235,9 @@ def scan(
       - A local annotation directory:  path/to/data/samples/
     """
     console = Console()
+
+    if group_by is not None and no_group_by:
+        raise click.UsageError("--group-by and --no-group-by cannot be used together.")
 
     # Plugin scanners from --scanner-module
     plugin_scanners: list[ScannerDef] = []
@@ -286,7 +309,9 @@ def scan(
         records, fields = load_task_from_spec(dataset, limit=limit)
         # Allow field overrides even on the task path
         if question_field or answer_field or id_field:
+            detected_group = fields.group
             fields = resolve_fields(records, question_field, answer_field, id_field, image_field)
+            fields.group = detected_group
     else:
         from datasets.exceptions import DatasetNotFoundError
 
@@ -315,6 +340,20 @@ def scan(
 
     if answer_subfield is not None:
         fields.answer_subfield = answer_subfield
+
+    group_by_source: str | None = "auto" if fields.group is not None else None
+    if no_group_by:
+        fields.group = None
+        group_by_source = None
+    elif group_by is not None:
+        if not any(group_by in record for record in records):
+            keys = sorted({k for r in records for k in r if not k.startswith("__")})
+            raise click.BadParameter(
+                f"Field {group_by!r} is not in any record. Available: {', '.join(keys)}",
+                param_hint="--group-by",
+            )
+        fields.group = group_by
+        group_by_source = "option"
 
     if files_root is not None:
         from inspect_dataset.scanner import get_sample_id as _gsid
@@ -362,6 +401,7 @@ def scan(
                 source_type=source_type,
                 revision=revision,
                 config=resolved_config,
+                group_by_source=group_by_source,
             )
         )
     else:
@@ -374,6 +414,7 @@ def scan(
             source_type=source_type,
             revision=revision,
             config=resolved_config,
+            group_by_source=group_by_source,
         )
 
     run.split_defaulted = split_defaulted

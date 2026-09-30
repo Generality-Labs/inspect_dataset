@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import statistics
+from typing import Any
 
 from inspect_dataset._types import FieldMap, Finding, Record
 from inspect_dataset.scanner import ScannerDef, get_sample_id
 from inspect_dataset.scanners._answers import answer_texts, subfield_metadata
+from inspect_dataset.scanners._groups import group_label, group_metadata, group_rows
 
 # Fraction of the dataset that must share a property before deviations are flagged.
 # E.g. if 80%+ of answers are lowercase, uppercase outliers are flagged.
@@ -13,16 +15,27 @@ _LENGTH_STDEV_MULTIPLIER = 3.0  # flag if word count > mean + N * stdev
 
 
 def _scan(records: list[Record], fields: FieldMap) -> list[Finding]:
-    # (row index, element index, text): one per row, or one per element under a subfield
-    units = [
-        (i, j, text)
-        for i, row in enumerate(answer_texts(records, fields, "inconsistent_format"))
-        for j, text in enumerate(row)
-    ]
+    texts = answer_texts(records, fields, "inconsistent_format")
+    findings: list[Finding] = []
+    for group, rows in group_rows(records, fields, "inconsistent_format"):
+        # (row index, element index, text): one per row, or one per element under a subfield
+        units = [(i, j, text) for i in rows for j, text in enumerate(texts[i])]
+        findings.extend(_scan_group(records, fields, units, group))
+    return findings
+
+
+def _scan_group(
+    records: list[Record], fields: FieldMap, units: list[tuple[int, int, str]], group: Any
+) -> list[Finding]:
     non_empty = [a for _, _, a in units if a]
     if len(non_empty) < 2:
         return []
 
+    grouped = fields.group is not None
+    majority = (
+        f"the majority in group {group_label(fields, group)}" if grouped else "dataset majority"
+    )
+    in_group = f" in group {group_label(fields, group)}" if grouped else ""
     findings: list[Finding] = []
 
     # --- Capitalisation consistency ---
@@ -48,14 +61,14 @@ def _scan(records: list[Record], fields: FieldMap) -> list[Finding]:
                     scanner="inconsistent_format",
                     severity="low",
                     category="format",
-                    explanation="Capitalisation differs from dataset majority. "
-                    + "; ".join(issues),
+                    explanation=f"Capitalisation differs from {majority}. " + "; ".join(issues),
                     sample_index=i,
                     sample_id=get_sample_id(records[i], fields, i),
                     metadata={
                         "answer": answer,
                         "issue": "capitalisation",
                         **subfield_metadata(fields, j),
+                        **group_metadata(fields, group),
                     },
                 )
             )
@@ -82,13 +95,14 @@ def _scan(records: list[Record], fields: FieldMap) -> list[Finding]:
                     scanner="inconsistent_format",
                     severity="low",
                     category="format",
-                    explanation=f"Trailing punctuation differs from dataset majority. {issue}",
+                    explanation=f"Trailing punctuation differs from {majority}. {issue}",
                     sample_index=i,
                     sample_id=get_sample_id(records[i], fields, i),
                     metadata={
                         "answer": answer,
                         "issue": "trailing_punctuation",
                         **subfield_metadata(fields, j),
+                        **group_metadata(fields, group),
                     },
                 )
             )
@@ -110,7 +124,7 @@ def _scan(records: list[Record], fields: FieldMap) -> list[Finding]:
                         severity="medium",
                         category="format",
                         explanation=(
-                            f"Answer is a length outlier: {wc} words "
+                            f"Answer is a length outlier{in_group}: {wc} words "
                             f"(mean={mean_wc:.1f}, stdev={stdev_wc:.1f}, "
                             f"threshold={threshold:.1f}). Answer: {answer!r}"
                         ),
@@ -122,6 +136,7 @@ def _scan(records: list[Record], fields: FieldMap) -> list[Finding]:
                             "mean_word_count": round(mean_wc, 2),
                             "issue": "length_outlier",
                             **subfield_metadata(fields, j),
+                            **group_metadata(fields, group),
                         },
                     )
                 )
@@ -135,7 +150,8 @@ inconsistent_format = ScannerDef(
     requires="answer",
     description=(
         "Flag answers whose capitalisation, punctuation, or length deviate "
-        "significantly from the dataset majority. Does not apply to list or struct answers "
+        "significantly from the dataset majority, or from each group's majority when "
+        "grouping is on. Does not apply to list or struct answers "
         "unless --answer-subfield selects a scalar."
     ),
 )

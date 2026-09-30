@@ -43,6 +43,9 @@ inspect-dataset scan flaviagiammarino/vqa-rad --max-answer-words 6
 inspect-dataset scan McGill-NLP/stereoset --config intersentence --split validation \
   --question-field context --answer-field sentences --answer-subfield sentence
 
+# Compare each sample with its own subset (task mode detects the subset key itself)
+inspect-dataset scan my-org/my-dataset --group-by subject
+
 # Limit samples loaded
 inspect-dataset scan flaviagiammarino/vqa-rad --limit 500
 
@@ -171,6 +174,8 @@ def answer_echoes_question(records, fields): ...
 ```
 
 The names are `"answer"` (at least one row has a non-empty answer), `"image"` (an image field is set and at least one row has an image), and `"artifacts"` (at least one row has an extraction artifacts directory from `--files-root`). `ScannerDef` and `LLMScannerDef` take the same `requires` argument. An unknown name raises `ValueError`.
+
+`scan_summary.json` also records how the population scanners (`inconsistent_format`, `answer_distribution` and `binary_question_ratio`) were grouped. On a benchmark made of subsets with different answer formats, one majority over the whole dataset is meaningless, and a balanced whole can hide one imbalanced subset. With a group field, these scanners compute their statistics per subset, and each finding names its group in `metadata.group` and in the explanation. Dataset-level findings become one per affected group. Groups with fewer than 20 answers are skipped by the two distribution scanners, where an imbalance is too likely to be chance. `group_by` is the field used, or `null`. `group_by_source` is `"option"` for `--group-by FIELD`, `"auto"` when task mode detected it, or `null` when there is no grouping or a Python caller did not pass `group_by_source` to `run_scanners`. Task mode groups automatically when exactly one of the `Sample.metadata` keys `dataset_name`, `subset`, `subject` or `category` has two or more values, for example `dataset_name` in BBH and `subject` in MMLU-Pro. `--no-group-by` turns that off. In Python, `load_inspect_task` sets `FieldMap.group` to the detected key, so set `fields.group = None` before `run_scanners` for pooled statistics. HuggingFace mode never groups automatically, because one config is already one subset.
 
 `scan_summary.json` records the `split` and `config` that were scanned. For a HuggingFace dataset these are filled in when not given: the only split, or `train` when there are several, and the only config or the dataset's default one. `split_defaulted` and `config_defaulted` say whether each was filled in (`true`) or given (`false`). Both are `null` for task and local scans. When the dataset has several splits and none is `train`, or several configs and no default, the scan stops and lists the choices.
 

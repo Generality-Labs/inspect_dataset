@@ -154,8 +154,15 @@ def run_scanners(
     source_type: str = "hf",
     revision: str | None = None,
     config: str | None = None,
+    group_by_source: str | None = None,
 ) -> ScanRun:
-    """Run scanners synchronously. Raises if any LLM scanners are included."""
+    """Run scanners synchronously. Raises if any LLM scanners are included.
+
+    ``ScanRun.group_by`` is taken from ``fields.group``. ``group_by_source`` says how it
+    was chosen (``"option"`` or ``"auto"``) and is dropped when there is no group. It is
+    not inferred: ``fields`` from ``load_inspect_task`` may already carry a detected
+    group, and the run then records ``group_by_source=None`` unless the caller passes it.
+    """
     llm = [s for s in scanners if isinstance(s, LLMScannerDef)]
     if llm:
         raise TypeError(
@@ -190,6 +197,8 @@ def run_scanners(
         source_type=source_type,
         revision=revision,
         config=config,
+        group_by=fields.group,
+        group_by_source=group_by_source if fields.group is not None else None,
         scanner_status=status,
     )
 
@@ -203,6 +212,7 @@ async def run_scanners_async(
     source_type: str = "hf",
     revision: str | None = None,
     config: str | None = None,
+    group_by_source: str | None = None,
 ) -> ScanRun:
     """Run scanners, supporting both sync and async (LLM) scanners."""
     # Run sync scanners first
@@ -216,6 +226,7 @@ async def run_scanners_async(
         source_type=source_type,
         revision=revision,
         config=config,
+        group_by_source=group_by_source,
     )
 
     # Run async (LLM) scanners concurrently

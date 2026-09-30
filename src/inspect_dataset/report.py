@@ -23,6 +23,10 @@ def _not_applicable(run: ScanRun) -> list[tuple[str, str]]:
     )
 
 
+def _source_suffix(run: ScanRun) -> str:
+    return f" ({run.group_by_source})" if run.group_by_source else ""
+
+
 def print_report(run: ScanRun, console: Console | None = None) -> None:
     """Print a rich summary of scan results to the terminal."""
     if console is None:
@@ -35,6 +39,8 @@ def print_report(run: ScanRun, console: Console | None = None) -> None:
         + (f"  split={run.split}" if run.split else "")
     )
     console.print(f"  Samples: {run.total_samples:,}")
+    if run.group_by is not None:
+        console.print(f"  Grouped by: {run.group_by}{_source_suffix(run)}")
     console.print(f"  Total findings: {len(run.findings):,}")
     for name, reason in _not_applicable(run):
         console.print(f"  [dim]Not applicable: {escape(name)} ({escape(reason)})[/dim]")
@@ -108,6 +114,8 @@ def save_findings(
         "source_type": run.source_type,
         "revision": run.revision,
         "config": run.config,
+        "group_by": run.group_by,
+        "group_by_source": run.group_by_source,
         "split_defaulted": run.split_defaulted,
         "config_defaulted": run.config_defaulted,
         "files_root": files_root,
@@ -150,6 +158,10 @@ def _write_markdown_report(run: ScanRun, path: Path) -> None:
         "",
         f"**Dataset:** {run.dataset_name}" + (f" (split: `{run.split}`)" if run.split else ""),
         f"**Samples scanned:** {run.total_samples:,}",
+    ]
+    if run.group_by is not None:
+        lines.append(f"**Grouped by:** `{run.group_by}`{_source_suffix(run)}")
+    lines += [
         f"**Total findings:** {len(run.findings):,}",
         "",
         "## Summary",

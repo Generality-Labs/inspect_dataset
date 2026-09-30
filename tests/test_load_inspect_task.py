@@ -152,6 +152,61 @@ def test_metadata_merged_into_record():
     assert records[0]["difficulty"] == "hard"
 
 
+# ---------------------------------------------------------------------------
+# Group field auto-detection (issue #36)
+# ---------------------------------------------------------------------------
+
+
+def _task_with_metadata(*metadata: dict) -> _Task:
+    return _make_task(*(_Sample(f"q{i}", "a", id=i, metadata=m) for i, m in enumerate(metadata)))
+
+
+def test_single_subset_candidate_is_the_group():
+    task = _task_with_metadata({"dataset_name": "navigate"}, {"dataset_name": "web_of_lies"})
+    _, fields = load_inspect_task(task)
+    assert fields.group == "dataset_name"
+
+
+def test_no_subset_candidate_means_no_group():
+    task = _task_with_metadata({"topic": "a"}, {"topic": "b"})
+    _, fields = load_inspect_task(task)
+    assert fields.group is None
+
+
+def test_two_subset_candidates_mean_no_group():
+    task = _task_with_metadata(
+        {"subject": "law", "category": "x"}, {"subject": "math", "category": "y"}
+    )
+    _, fields = load_inspect_task(task)
+    assert fields.group is None
+
+
+def test_candidate_with_one_value_is_ignored():
+    task = _task_with_metadata({"subject": "law"}, {"subject": "law"})
+    _, fields = load_inspect_task(task)
+    assert fields.group is None
+
+
+def test_single_valued_candidate_does_not_block_another():
+    task = _task_with_metadata(
+        {"subject": "law", "category": "x"}, {"subject": "math", "category": "x"}
+    )
+    _, fields = load_inspect_task(task)
+    assert fields.group == "subject"
+
+
+def test_candidate_with_non_scalar_values_is_ignored():
+    task = _task_with_metadata({"category": ["a"]}, {"category": ["b"]})
+    _, fields = load_inspect_task(task)
+    assert fields.group is None
+
+
+def test_candidate_missing_from_some_samples_still_counts():
+    task = _task_with_metadata({"subject": "law"}, {"subject": "math"}, {})
+    _, fields = load_inspect_task(task)
+    assert fields.group == "subject"
+
+
 def test_choices_preserved():
     task = _make_task(_Sample("which modality?", "mri", choices=["mri", "ct", "xray"]))
     records, _ = load_inspect_task(task)
