@@ -120,6 +120,11 @@ def _answer_matches_option(answer: list[str], option: _Option) -> bool:
 def _scan(records: list[Record], fields: FieldMap) -> list[Finding]:
     findings = []
     for i, record in enumerate(records):
+        # Listed choices are already visible to the model, so "or" gives nothing away.
+        choices = record.get("choices")
+        if isinstance(choices, (list, tuple, dict)) and choices:
+            continue
+
         question = str(record.get(fields.question, "") or "").strip()
         answer = str(record.get(fields.answer, "") or "").strip()
 
@@ -166,6 +171,7 @@ forced_choice_leakage = ScannerDef(
     description=(
         "Flag questions that offer explicit options via 'or' where the answer "
         "is one of those options (e.g. 'is this an MRI or CT scan?' → 'mri'). "
-        "A model can exploit the phrasing without understanding the content."
+        "Options come from the words next to 'or' in the last sentence that "
+        "ends in a question mark. Samples with listed choices are skipped."
     ),
 )

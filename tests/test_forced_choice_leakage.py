@@ -206,3 +206,17 @@ def test_list_of_options_flagged():
 def test_initial_does_not_end_the_sentence():
     q = "Question: Who was elected, Leandro N. Alem or Hipólito Yrigoyen?"
     assert len(forced_choice_leakage(rec(q, "Leandro N. Alem"), FIELDS)) == 1
+
+
+def test_samples_with_choices_skipped():
+    q = "is this an mri or a ct scan?"
+    choices_list = [{"q": q, "a": "mri", "choices": ["mri", "ct scan"]}]
+    choices_dict = [{"q": q, "a": "mri", "choices": {"A": "mri", "B": "ct"}}]
+    assert forced_choice_leakage(choices_list, FIELDS) == []
+    assert forced_choice_leakage(choices_dict, FIELDS) == []
+
+
+def test_empty_choices_still_scanned():
+    q = "is this an mri or a ct scan?"
+    assert len(forced_choice_leakage([{"q": q, "a": "mri", "choices": []}], FIELDS)) == 1
+    assert len(forced_choice_leakage([{"q": q, "a": "mri", "choices": None}], FIELDS)) == 1
