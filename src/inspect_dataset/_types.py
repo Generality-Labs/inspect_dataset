@@ -54,6 +54,9 @@ class ScanRun:
     source_type: str = "hf"  # "hf" | "inspect_task"
     revision: str | None = None  # HF revision / commit SHA
     config: str | None = None  # HF config/subset name (multi-config datasets)
+    # HF mode: whether split/config were filled in rather than given. None for other sources.
+    split_defaulted: bool | None = None
+    config_defaulted: bool | None = None
 
     def by_scanner(self) -> dict[str, list[Finding]]:
         result: dict[str, list[Finding]] = {}
