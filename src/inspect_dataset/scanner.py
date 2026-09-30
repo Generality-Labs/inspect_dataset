@@ -135,7 +135,9 @@ def _unmet_requirements(
     elif all(r.get(fields.image) is None for r in records):
         unmet["image"] = f"image field {fields.image!r} is empty in every row"
     if not any(r.get("__artifacts_dir__") for r in records):
-        unmet["artifacts"] = "no extraction artifacts; pass --files-root"
+        unmet["artifacts"] = (
+            "no extraction artifacts; pass --files-root with one directory per sample id"
+        )
     return unmet
 
 

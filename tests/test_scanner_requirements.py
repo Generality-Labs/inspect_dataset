@@ -14,6 +14,7 @@ from inspect_dataset.scanners import BUILTIN_SCANNER_NAMES, LLM_SCANNER_FACTORIE
 
 FIELDS = FieldMap(question="q", answer="a")
 NO_ANSWERS = "no non-empty answers in field 'a'"
+NO_ARTIFACTS = "no extraction artifacts; pass --files-root with one directory per sample id"
 
 
 class _Recorder:
@@ -139,7 +140,7 @@ def test_artifacts_requirement(tmp_path: Path):
     run = run_scanners(records, FIELDS, [scanner])
     assert run.scanner_status["needs_artifacts"] == {
         "status": "not_applicable",
-        "reason": "no extraction artifacts; pass --files-root",
+        "reason": NO_ARTIFACTS,
     }
 
     records[1]["__artifacts_dir__"] = str(tmp_path)
@@ -150,7 +151,7 @@ def test_artifacts_requirement(tmp_path: Path):
 def test_first_unmet_requirement_in_declared_order_is_reported():
     scanner = ScannerDef(name="both", fn=_Recorder(), requires=["artifacts", "answer"])
     run = run_scanners([{"q": "question", "a": ""}], FIELDS, [scanner])
-    assert run.scanner_status["both"]["reason"] == "no extraction artifacts; pass --files-root"
+    assert run.scanner_status["both"]["reason"] == NO_ARTIFACTS
 
 
 async def test_llm_scanner_with_missing_requirement_is_not_called():
