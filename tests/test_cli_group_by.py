@@ -11,6 +11,7 @@ from pathlib import Path
 from click.testing import CliRunner
 
 import inspect_dataset.cli as cli_mod
+from inspect_dataset._types import FieldMap
 from inspect_dataset.cli import cli
 
 # Two subsets, each always answered the same way: balanced pooled, imbalanced per subset.
@@ -83,3 +84,54 @@ def test_group_by_unknown_field_is_an_error(tmp_path, monkeypatch):
     assert result.exit_code != 0
     assert "nope" in result.output
     assert "--group-by" in result.output
+
+
+def _run_task(tmp_path: Path, monkeypatch, extra_args: list[str], group: str | None):
+    def fake_load_task_from_spec(spec, limit=None):
+        return [dict(r) for r in _RECORDS], FieldMap(question="q", answer="a", id=None, group=group)
+
+    monkeypatch.setattr(cli_mod, "load_task_from_spec", fake_load_task_from_spec)
+    out = tmp_path / "findings"
+    result = CliRunner().invoke(
+        cli,
+        ["scan", "pkg.mod@task", "--scanners", "answer_distribution", "-o", str(out), *extra_args],
+    )
+    summary = json.loads((out / "scan_summary.json").read_text()) if result.exit_code == 0 else {}
+    return result, out, summary
+
+
+def test_task_mode_uses_the_detected_group(tmp_path, monkeypatch):
+    result, out, summary = _run_task(tmp_path, monkeypatch, [], group="subset")
+    assert result.exit_code == 0, result.output
+    assert (summary["group_by"], summary["group_by_source"]) == ("subset", "auto")
+    assert len(_findings(out, "answer_distribution")) == 2
+    assert "Grouped by: subset (auto)" in result.output
+
+
+def test_group_by_overrides_the_detected_group(tmp_path, monkeypatch):
+    result, _, summary = _run_task(tmp_path, monkeypatch, ["--group-by", "subject"], group="subset")
+    assert result.exit_code == 0, result.output
+    assert (summary["group_by"], summary["group_by_source"]) == ("subject", "option")
+
+
+def test_no_group_by_turns_off_the_detected_group(tmp_path, monkeypatch):
+    result, out, summary = _run_task(tmp_path, monkeypatch, ["--no-group-by"], group="subset")
+    assert result.exit_code == 0, result.output
+    assert (summary["group_by"], summary["group_by_source"]) == (None, None)
+    assert _findings(out, "answer_distribution") == []
+
+
+def test_group_by_and_no_group_by_conflict(tmp_path, monkeypatch):
+    result, _, _ = _run_task(
+        tmp_path, monkeypatch, ["--group-by", "subject", "--no-group-by"], group=None
+    )
+    assert result.exit_code != 0
+    assert "--no-group-by" in result.output
+
+
+def test_field_overrides_keep_the_detected_group(tmp_path, monkeypatch):
+    result, _, summary = _run_task(
+        tmp_path, monkeypatch, ["--question-field", "q", "--answer-field", "a"], group="subset"
+    )
+    assert result.exit_code == 0, result.output
+    assert (summary["group_by"], summary["group_by_source"]) == ("subset", "auto")

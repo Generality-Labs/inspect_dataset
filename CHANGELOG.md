@@ -16,11 +16,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `inspect_dataset.loader.resolve_hf_split_config`, which fills in a missing split and config for a HF dataset ([#32](https://github.com/Generality-Labs/inspect_dataset/issues/32)).
 - `latex_escapes` scanner for LaTeX commands whose backslash was eaten by a Python string escape. The typical case is `\frac` stored as a form feed followed by `rac`, which AIME 2024 has in two problems. It looks only inside math, checks the question, the answer and each choice, and reports the likely repair ([#38](https://github.com/Generality-Labs/inspect_dataset/issues/38)).
 - `requires` on `ScannerDef`, `LLMScannerDef` and `@dataset_scanner`: the inputs a scanner needs (`"answer"`, `"image"`, `"artifacts"`). When one is missing, the runner records the scanner as not applicable with a standard reason and does not call it. `inspect-dataset scanners` shows each built-in's requirements ([#34](https://github.com/Generality-Labs/inspect_dataset/issues/34)).
+- `--group-by FIELD` for `scan`: `inconsistent_format`, `answer_distribution` and `binary_question_ratio` compute their statistics per subset named by that field, instead of one majority over a whole benchmark of mixed subsets. Findings name their group in `metadata.group` and the explanation. Task mode picks the subset key from the sample metadata when there is one obvious candidate (`dataset_name`, `subset`, `subject` or `category`), and `--no-group-by` turns that off. `scan_summary.json` records `group_by` and `group_by_source` ([#36](https://github.com/Generality-Labs/inspect_dataset/issues/36)).
 
 ### Changed
 
 - HF-mode scans pick the split and config when they are not given. `--split` now defaults to the dataset's only split, or to `train` when there are several. `--config` defaults to the only config or the dataset's default config. A dataset with several splits and no `train`, or several configs and no default, fails with a message that lists the choices and names the option to pass ([#32](https://github.com/Generality-Labs/inspect_dataset/issues/32)).
 - Task-mode and local scans record `split` as `null` unless `--split` is given. Task-mode scans used to record the unused `--split` default, `train` ([#32](https://github.com/Generality-Labs/inspect_dataset/issues/32)).
+- Task-mode scans of multi-subset tasks now group the population scanners by subset without being asked. On BBH, `inconsistent_format` falls from 1,420 findings to 1. Pass `--no-group-by` to get the pooled statistics back ([#36](https://github.com/Generality-Labs/inspect_dataset/issues/36)).
 
 ### Fixed
 

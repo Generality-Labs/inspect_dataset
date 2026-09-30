@@ -14,6 +14,8 @@ from inspect_dataset._types import FieldMap, Record
 _QUESTION_CANDIDATES = ["question", "prompt", "input", "text", "query", "instruction"]
 _ANSWER_CANDIDATES = ["answer", "label", "target", "output", "response", "gold"]
 _ID_CANDIDATES = ["id", "sample_id", "idx", "index", "qid"]
+# Sample.metadata keys that multi-subset inspect_evals tasks use to name a sample's subset
+_GROUP_CANDIDATES = ["dataset_name", "subset", "subject", "category"]
 
 
 def auto_detect_fields(columns: list[str]) -> FieldMap:
@@ -308,6 +310,25 @@ def _target_to_str(target: Any) -> str:
     return str(target) if target is not None else ""
 
 
+def detect_group_field(records: list[Record], metadata_keys: set[str]) -> str | None:
+    """The metadata key that names each sample's subset, if there is exactly one.
+
+    A candidate key qualifies when it came from ``Sample.metadata``, holds only scalar
+    values, and takes at least two distinct values. Zero or several qualifying keys mean
+    there is no single obvious subset, so the result is ``None``.
+    """
+    qualifying = []
+    for key in _GROUP_CANDIDATES:
+        if key not in metadata_keys:
+            continue
+        values = [record[key] for record in records if record.get(key) is not None]
+        if not all(isinstance(v, str | int | float | bool) for v in values):
+            continue
+        if len(set(values)) >= 2:
+            qualifying.append(key)
+    return qualifying[0] if len(qualifying) == 1 else None
+
+
 def load_inspect_task(task_or_fn: Any, limit: int | None = None) -> tuple[list[Record], FieldMap]:
     """Load records from an inspect_ai Task object or task function.
 
@@ -318,7 +339,8 @@ def load_inspect_task(task_or_fn: Any, limit: int | None = None) -> tuple[list[R
     view server.
 
     Returns a ``(records, fields)`` tuple — the ``FieldMap`` is pre-set so no
-    auto-detection is needed.
+    auto-detection is needed. ``fields.group`` is set when the metadata has one obvious
+    subset key (see ``detect_group_field``).
     """
     task = task_or_fn() if callable(task_or_fn) else task_or_fn
     dataset = getattr(task, "dataset", None)
@@ -326,6 +348,7 @@ def load_inspect_task(task_or_fn: Any, limit: int | None = None) -> tuple[list[R
         raise ValueError("Task has no dataset")
 
     records: list[Record] = []
+    metadata_keys: set[str] = set()
     for sample in dataset:
         record: Record = {
             "input": _input_to_str(sample.input),
@@ -337,14 +360,21 @@ def load_inspect_task(task_or_fn: Any, limit: int | None = None) -> tuple[list[R
         if sample.metadata:
             # Merge metadata into record so scanners can access it directly
             for k, v in sample.metadata.items():
-                record.setdefault(k, v)
+                if k not in record:
+                    record[k] = v
+                    metadata_keys.add(k)
         if sample.files:
             record["__files__"] = sample.files
         records.append(record)
         if limit is not None and len(records) >= limit:
             break
 
-    fields = FieldMap(question="input", answer="target", id="id")
+    fields = FieldMap(
+        question="input",
+        answer="target",
+        id="id",
+        group=detect_group_field(records, metadata_keys),
+    )
     return records, fields
 
 
