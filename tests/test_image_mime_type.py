@@ -198,3 +198,42 @@ def test_sample_id_from_id_field():
     findings = image_mime_type(records, fields)
     assert len(findings) == 1
     assert findings[0].sample_id == "hle_91e88c21"
+
+
+# -- list-valued image fields (task mode collects every image of a sample) ---
+
+
+def test_list_field_reports_each_mismatched_image_with_its_index():
+    records = [
+        {
+            "q": "Compare",
+            "a": "A",
+            "img": [
+                _hf_image(PNG_HEADER, "one.png"),
+                _hf_image(PNG_HEADER, "two.jpg"),
+                "data:image/gif;base64," + base64.b64encode(JPEG_HEADER).decode(),
+            ],
+        }
+    ]
+    findings = image_mime_type(records, FIELDS)
+    assert [(f.sample_index, f.metadata["image_index"]) for f in findings] == [(0, 1), (0, 2)]
+    assert findings[1].metadata["declared_mime"] == "image/gif"
+    assert findings[1].metadata["actual_mime"] == "image/jpeg"
+
+
+def test_list_field_skips_images_without_bytes():
+    records = [
+        {
+            "q": "Q",
+            "a": "A",
+            "img": [{"bytes": None, "path": "https://example.com/x.jpg"}, None],
+        }
+    ]
+    assert image_mime_type(records, FIELDS) == []
+
+
+def test_scalar_field_findings_have_no_image_index():
+    records = [{"q": "Q", "a": "A", "img": _hf_image(PNG_HEADER, "x.jpg")}]
+    findings = image_mime_type(records, FIELDS)
+    assert len(findings) == 1
+    assert "image_index" not in findings[0].metadata

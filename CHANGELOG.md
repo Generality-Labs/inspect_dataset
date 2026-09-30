@@ -20,6 +20,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `version`, `task` and `scorers` in `scan_summary.json`, so findings can be attributed to the inspect-dataset version that produced them and, in task mode, to the task spec and its scorer registry names. The version and scorers also appear in the terminal report and `REPORT.md`. Scanners can read the task's scorer names from `FieldMap.scorers` ([#40](https://github.com/Generality-Labs/inspect_dataset/issues/40)).
 - `targets` in task-mode records: every target string of the sample, where `target` holds only the first. Pass `--answer-field targets --answer-subfield '*'` to measure every string of a list target, such as DROP's alternative answers or MBPP's test cases ([#37](https://github.com/Generality-Labs/inspect_dataset/issues/37)).
 - `FieldMap.choices`: the column holding each sample's answer choices. Task mode sets it to `choices` when any sample has choices, so scanners can resolve a letter target such as `"B"` to the text of the choice it names ([#37](https://github.com/Generality-Labs/inspect_dataset/issues/37)).
+- `duplicate_questions` and `image_mime_type` accept an image field that holds a list of images. `duplicate_questions` compares the whole list, and `image_mime_type` checks each image and records its `image_index` in the finding ([#37](https://github.com/Generality-Labs/inspect_dataset/issues/37)).
 
 ### Changed
 
