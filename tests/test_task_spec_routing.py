@@ -6,11 +6,15 @@ packages wherever inspect_ai is installed, so the owner alone must not decide.
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
 import pytest
+from click.testing import CliRunner
 
+import inspect_dataset.cli as cli_mod
+from inspect_dataset.cli import cli
 from inspect_dataset.loader import is_task_spec
 
 
@@ -126,3 +130,26 @@ def test_registry_not_imported_without_owner_entry_point(fake_packages: Path, mo
     monkeypatch.delitem(sys.modules, "inspect_ai._util.registry")
     assert not is_task_spec("ids_owner_e/boolq")
     assert "inspect_ai._util.registry" not in sys.modules
+
+
+def test_cli_scans_google_boolq_from_hub(fake_packages: Path, monkeypatch):
+    (fake_packages / "google").mkdir()
+    calls: list[str] = []
+
+    def fake_load_hf_dataset(dataset, split="train", revision=None, limit=None, config=None):
+        calls.append(dataset)
+        return [{"question": "is water wet", "answer": "true"}]
+
+    def fail_load_task(spec, limit=None):
+        raise AssertionError(f"routed {spec!r} to the task loader")
+
+    monkeypatch.setattr(cli_mod, "load_hf_dataset", fake_load_hf_dataset)
+    monkeypatch.setattr(cli_mod, "load_task_from_spec", fail_load_task)
+    out = fake_packages / "findings"
+    result = CliRunner().invoke(
+        cli,
+        ["scan", "google/boolq", "--scanners", "answer_length", "-o", str(out)],
+    )
+    assert result.exit_code == 0, result.output
+    assert calls == ["google/boolq"]
+    assert json.loads((out / "scan_summary.json").read_text())["source_type"] == "hf"

@@ -10,6 +10,7 @@ from rich.console import Console
 
 from inspect_dataset.loader import (
     DatasetSelectionError,
+    is_task_spec,
     load_hf_dataset,
     load_local_samples,
     load_task_from_spec,
@@ -262,18 +263,10 @@ def scan(
             for s in scanner_list
         ]
 
-    # Detect the source type.
-    # - An existing directory → local annotation directory
-    # - "@" present → always a task spec (module@fn or file@fn)
-    # - "package/task" with no "@" → task if "package" is an installed Python
-    #   package (importlib.util.find_spec returns non-None); HF slugs like
-    #   "owner/dataset" have no corresponding Python package.
-    import importlib.util as _ilu
-
+    # An existing directory is local samples. Otherwise is_task_spec decides
+    # between an inspect_ai task and a HuggingFace dataset path.
     is_local = Path(dataset).is_dir()
-    is_task = not is_local and (
-        "@" in dataset or ("/" in dataset and _ilu.find_spec(dataset.split("/")[0]) is not None)
-    )
+    is_task = not is_local and is_task_spec(dataset)
     resolved_split: str | None = split
     split_defaulted: bool | None = None
     config_defaulted: bool | None = None
