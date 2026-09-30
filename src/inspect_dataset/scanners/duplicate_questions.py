@@ -15,6 +15,8 @@ from inspect_dataset.scanners._identity import (
 
 Group = list[tuple[int, Record]]
 
+_MAX_LISTED = 10
+
 
 def _scan(records: list[Record], fields: FieldMap) -> list[Finding]:
     by_text: dict[TextKey, Group] = defaultdict(list)
@@ -24,7 +26,7 @@ def _scan(records: list[Record], fields: FieldMap) -> list[Finding]:
 
     if fields.image is not None:
         return [f for key, group in groups for f in _image_group_findings(key, group, fields)]
-    return [f for key, group in groups for f in _text_group_findings(key, group, fields)]
+    return [_text_group_finding(key, group, fields) for key, group in groups]
 
 
 def _image_group_findings(key: TextKey, group: Group, fields: FieldMap) -> list[Finding]:
@@ -46,8 +48,8 @@ def _image_group_findings(key: TextKey, group: Group, fields: FieldMap) -> list[
             continue
         agree = _answers_agree(dups, fields)
         shared = f"{_subject(key)} and image" if img_key else f"{_subject(key)}, with no image"
-        findings.extend(
-            _group_findings(
+        findings.append(
+            _group_finding(
                 dups,
                 fields,
                 severity="high",
@@ -87,8 +89,8 @@ def _image_group_findings(key: TextKey, group: Group, fields: FieldMap) -> list[
             f"with different answers (at indices {_indices(group)}). "
             "This is expected in VQA datasets but worth verifying."
         )
-    findings.extend(
-        _group_findings(
+    findings.append(
+        _group_finding(
             group,
             fields,
             severity=severity,
@@ -103,7 +105,7 @@ def _image_group_findings(key: TextKey, group: Group, fields: FieldMap) -> list[
     return findings
 
 
-def _text_group_findings(key: TextKey, group: Group, fields: FieldMap) -> list[Finding]:
+def _text_group_finding(key: TextKey, group: Group, fields: FieldMap) -> Finding:
     """Without an image field, classify records sharing their text by answer agreement."""
     agree = _answers_agree(group, fields)
     if agree:
@@ -121,7 +123,7 @@ def _text_group_findings(key: TextKey, group: Group, fields: FieldMap) -> list[F
             "In multimodal datasets this is expected — use --image-field "
             "for precise classification."
         )
-    return _group_findings(
+    return _group_finding(
         group,
         fields,
         severity=severity,
@@ -130,31 +132,31 @@ def _text_group_findings(key: TextKey, group: Group, fields: FieldMap) -> list[F
     )
 
 
-def _group_findings(
+def _group_finding(
     group: Group,
     fields: FieldMap,
     *,
     severity: Severity,
     explanation: str,
     metadata: dict[str, Any],
-) -> list[Finding]:
+) -> Finding:
+    """One finding for a group of duplicates, placed on its first row."""
     indices = [idx for idx, _ in group]
-    return [
-        Finding(
-            scanner="duplicate_questions",
-            severity=severity,
-            category="question_quality",
-            explanation=explanation,
-            sample_index=idx,
-            sample_id=get_sample_id(record, fields, idx),
-            metadata={
-                **metadata,
-                "duplicate_indices": indices,
-                "duplicate_count": len(group),
-            },
-        )
-        for idx, record in group
-    ]
+    ids = [get_sample_id(record, fields, idx) for idx, record in group]
+    return Finding(
+        scanner="duplicate_questions",
+        severity=severity,
+        category="question_quality",
+        explanation=explanation,
+        sample_index=indices[0],
+        sample_id=ids[0],
+        metadata={
+            **metadata,
+            "duplicate_indices": indices,
+            "duplicate_ids": ids,
+            "duplicate_count": len(group),
+        },
+    )
 
 
 def _answers_agree(group: Group, fields: FieldMap) -> bool:
@@ -170,16 +172,20 @@ def _subject(key: TextKey) -> str:
     return "question" if key[1] is None else "question and choices"
 
 
-def _indices(group: Group) -> list[int]:
-    return [idx for idx, _ in group]
+def _indices(group: Group) -> str:
+    """The group's indices for an explanation, cut short for large groups."""
+    indices = [idx for idx, _ in group]
+    if len(indices) <= _MAX_LISTED:
+        return str(indices)
+    return f"{indices[:_MAX_LISTED]} and {len(indices) - _MAX_LISTED} more"
 
 
 duplicate_questions = ScannerDef(
     name="duplicate_questions",
     fn=_scan,
     description=(
-        "Flag samples that appear more than once. A sample is its question text, "
-        "its choices when it has them, and its images by content. "
+        "Flag samples that appear more than once, with one finding per group of duplicates. "
+        "A sample is its question text, its choices when it has them, and its images by content. "
         "With an image field (--image-field, or the input images of a task): "
         "exact (question+image) duplicates are HIGH; "
         "same question across different images with same answer is MEDIUM "
