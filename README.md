@@ -125,7 +125,7 @@ uv run inspect-dataset view results/vqa-rad/ results/medqa/
 | `inconsistent_format`   | low/medium  | Capitalisation, punctuation, or length deviations from the dataset majority (80%+ threshold).                                                        |
 | `answer_distribution`   | high        | Datasets where a single answer accounts for ≥85% of samples — a model that always predicts that answer would score highly without any understanding. |
 | `forced_choice_leakage` | medium      | Questions offering explicit options via "or" where the answer is one of those options.                                                               |
-| `encoding_issues`       | low         | Questions or answers containing non-printable or control characters.                                                                                 |
+| `encoding_issues`       | low         | Questions or answers containing non-printable or control characters. Tabs inside fenced code and Asymptote `[asy]` blocks are ignored.               |
 | `latex_escapes`         | medium      | LaTeX commands inside math whose backslash was eaten by a Python string escape, such as `\frac` stored as a form feed followed by `rac`.             |
 | `mojibake`              | low/medium  | UTF-8 text decoded with the wrong codec (Windows-1252, Latin-1, Mac Roman), such as `‚Äì` for `–`. Checks choices too and gives the repair.          |
 | `binary_question_ratio` | low         | Datasets where a high proportion of questions are binary (yes/no).                                                                                   |

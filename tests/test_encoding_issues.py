@@ -53,3 +53,37 @@ def test_bad_chars_in_metadata():
 def test_del_character_flagged():
     findings = encoding_issues(rec("what?", "ans\x7fwer"), FIELDS)
     assert len(findings) == 1
+
+
+# MATH (EleutherAI/hendrycks_math) indents Asymptote code with tabs.
+MATH_ASY = (
+    "Below is the graph of $y = a \\sin bx$. Find $b.$\n\n"
+    "[asy]import TrigMacros;\n\nreal g(real x)\n{\n\treturn (-2*sin(x/3));\n}\n[/asy]"
+)
+
+
+def test_tab_inside_asy_block_not_flagged():
+    assert encoding_issues(rec(MATH_ASY, "3"), FIELDS) == []
+
+
+def test_tab_inside_fenced_code_not_flagged():
+    text = "Fix this:\n```python\ndef f():\n\treturn 1\n```"
+    assert encoding_issues(rec(text, "ok"), FIELDS) == []
+
+
+def test_tab_inside_unclosed_fence_not_flagged():
+    assert encoding_issues(rec("```\nif x:\n\ty = 1", "ok"), FIELDS) == []
+
+
+def test_tab_outside_code_still_flagged():
+    text = MATH_ASY + "\n\nthree\tdresses"
+    findings = encoding_issues(rec(text, "3"), FIELDS)
+    assert len(findings) == 1
+    assert findings[0].metadata["bad_chars"] == ["'\\t'"]
+
+
+def test_other_control_char_inside_code_still_flagged():
+    text = '[asy]\n\tlabel("$\x0crac{1}{2}$");\n[/asy]'
+    findings = encoding_issues(rec(text, "3"), FIELDS)
+    assert len(findings) == 1
+    assert findings[0].metadata["bad_chars"] == ["'\\x0c'"]
