@@ -130,6 +130,16 @@ def cli() -> None:
     ),
 )
 @click.option(
+    "--group-by",
+    default=None,
+    metavar="FIELD",
+    help=(
+        "Record field that names each sample's subset (e.g. a metadata key such as "
+        "'subject'). inconsistent_format, answer_distribution and binary_question_ratio "
+        "then compute their statistics per subset instead of over the whole dataset."
+    ),
+)
+@click.option(
     "--scanners",
     default=None,
     help=(
@@ -195,6 +205,7 @@ def scan(
     answer_subfield: str | None,
     id_field: str | None,
     image_field: str | None,
+    group_by: str | None,
     scanners: str | None,
     scanner_modules: tuple[str, ...],
     model: str | None,
@@ -316,6 +327,17 @@ def scan(
     if answer_subfield is not None:
         fields.answer_subfield = answer_subfield
 
+    group_by_source: str | None = None
+    if group_by is not None:
+        if not any(group_by in record for record in records):
+            keys = sorted({k for r in records for k in r if not k.startswith("__")})
+            raise click.BadParameter(
+                f"Field {group_by!r} is not in any record. Available: {', '.join(keys)}",
+                param_hint="--group-by",
+            )
+        fields.group = group_by
+        group_by_source = "option"
+
     if files_root is not None:
         from inspect_dataset.scanner import get_sample_id as _gsid
 
@@ -362,6 +384,7 @@ def scan(
                 source_type=source_type,
                 revision=revision,
                 config=resolved_config,
+                group_by_source=group_by_source,
             )
         )
     else:
@@ -374,6 +397,7 @@ def scan(
             source_type=source_type,
             revision=revision,
             config=resolved_config,
+            group_by_source=group_by_source,
         )
 
     run.split_defaulted = split_defaulted
