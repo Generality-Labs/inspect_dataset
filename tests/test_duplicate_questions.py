@@ -1,5 +1,7 @@
+import base64
+
 from inspect_dataset._types import FieldMap
-from inspect_dataset.scanners.duplicate_questions import _image_key, duplicate_questions
+from inspect_dataset.scanners.duplicate_questions import duplicate_questions
 
 FIELDS = FieldMap(question="q", answer="a")
 
@@ -160,16 +162,6 @@ def test_sample_id_from_field():
 # ---------------------------------------------------------------------------
 
 
-def test_image_key_of_a_list_is_a_tuple_of_image_keys():
-    record = {"img": [IMG1, {"bytes": None, "path": "https://x/y.png"}, "data:image/png;base64,AA"]}
-    key = _image_key(record, "img")
-    assert key == (_image_key({"img": IMG1}, "img"), "https://x/y.png", "data:image/png;base64,AA")
-
-
-def test_image_key_of_an_empty_list_is_none():
-    assert _image_key({"img": []}, "img") is None
-
-
 def test_same_image_list_is_an_exact_duplicate():
     data = [img_rec("which is larger?", "A", [IMG1, IMG2]) for _ in range(2)]
     findings = duplicate_questions(data, IMG_FIELDS)
@@ -200,3 +192,98 @@ def test_missing_image_next_to_an_image_is_question_reuse():
     findings = duplicate_questions(data, IMG_FIELDS)
     assert [f.metadata["duplicate_type"] for f in findings] == ["question_reuse"] * 2
     assert all(f.severity == "low" for f in findings)
+
+
+# ---------------------------------------------------------------------------
+# Sample identity — choices and image content
+# ---------------------------------------------------------------------------
+
+CHOICE_FIELDS = FieldMap(question="q", answer="a", choices="choices")
+HYPERBATON = "Which sentence has the correct adjective order: OPTIONS:"
+
+
+def choice_rec(question: str, answer: str, choices: list[str], **extra) -> dict:
+    return {"q": question, "a": answer, "choices": choices, **extra}
+
+
+def test_rows_differing_only_in_choices_are_not_duplicates():
+    data = [
+        choice_rec(HYPERBATON, "A", ["old red car", "red old car"]),
+        choice_rec(HYPERBATON, "B", ["wooden big box", "big wooden box"]),
+        choice_rec(HYPERBATON, "A", ["tiny green cup", "green tiny cup"]),
+    ]
+    assert duplicate_questions(data, CHOICE_FIELDS) == []
+
+
+def test_same_text_and_choices_are_duplicates():
+    data = [
+        choice_rec(HYPERBATON, "A", ["old red car", "red old car"]),
+        choice_rec(HYPERBATON, "B", ["wooden big box", "big wooden box"]),
+        choice_rec(HYPERBATON, "A", ["Old red car", "red  old car"]),
+    ]
+    findings = duplicate_questions(data, CHOICE_FIELDS)
+    assert findings
+    assert {f.sample_index for f in findings} == {0, 2}
+    assert all(f.severity == "high" for f in findings)
+
+
+def test_whitespace_inside_the_question_is_collapsed():
+    data = recs(("what  is\n a?", "yes"), ("what is a?", "yes"))
+    assert duplicate_questions(data, FIELDS)
+
+
+def test_same_text_and_choices_with_different_images_are_question_reuse():
+    fields = FieldMap(question="q", answer="a", image="img", choices="choices")
+    data = [
+        choice_rec("What is shown?", "A", ["cat", "dog"], img=IMG1),
+        choice_rec("What is shown?", "B", ["cat", "dog"], img=IMG2),
+    ]
+    findings = duplicate_questions(data, fields)
+    assert findings
+    assert {f.metadata["duplicate_type"] for f in findings} == {"question_reuse"}
+
+
+PNG_BYTES = b"\x89PNG\r\n\x1a\n" + b"\x00" * 24
+PNG_URI = "data:image/png;base64," + base64.b64encode(PNG_BYTES).decode()
+
+
+def test_same_image_as_a_file_and_a_data_uri_is_an_exact_duplicate():
+    data = [
+        img_rec("what is shown?", "a chart", [{"bytes": PNG_BYTES, "path": "/data/chart.png"}]),
+        img_rec("what is shown?", "a chart", [PNG_URI]),
+    ]
+    findings = duplicate_questions(data, IMG_FIELDS)
+    assert findings
+    assert {f.metadata["duplicate_type"] for f in findings} == {"exact"}
+
+
+def test_letter_and_text_answers_naming_the_same_choice_agree():
+    data = [
+        choice_rec("capital of france?", "A", ["Paris", "London"]),
+        choice_rec("capital of france?", "paris", ["Paris", "London"]),
+    ]
+    findings = duplicate_questions(data, CHOICE_FIELDS)
+    assert findings
+    assert all(f.metadata["answers_agree"] is True for f in findings)
+    assert all(f.severity == "high" for f in findings)
+
+
+TASK_FIELDS = FieldMap(question="input", answer="target", id="id", scorers=["inspect_ai/f1"])
+
+
+def task_rec(sid: str, targets: list[str]) -> dict:
+    return {"input": "passage. how many?", "target": targets[0], "targets": targets, "id": sid}
+
+
+def test_list_targets_in_any_order_agree():
+    data = [task_rec("q1", ["3", "three"]), task_rec("q2", ["three", "3"])]
+    findings = duplicate_questions(data, TASK_FIELDS)
+    assert findings
+    assert all(f.metadata["answers_agree"] is True for f in findings)
+
+
+def test_list_targets_with_different_members_disagree():
+    data = [task_rec("q1", ["3", "three"]), task_rec("q2", ["3"])]
+    findings = duplicate_questions(data, TASK_FIELDS)
+    assert findings
+    assert all(f.metadata["answers_agree"] is False for f in findings)

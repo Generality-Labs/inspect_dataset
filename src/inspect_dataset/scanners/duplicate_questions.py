@@ -1,214 +1,185 @@
 from __future__ import annotations
 
-import hashlib
 from collections import defaultdict
 from typing import Any
 
-from inspect_dataset._types import FieldMap, Finding, Record
+from inspect_dataset._types import FieldMap, Finding, Record, Severity
 from inspect_dataset.scanner import ScannerDef, get_sample_id
+from inspect_dataset.scanners._identity import (
+    ImageKey,
+    TextKey,
+    answer_key,
+    image_key,
+    text_key,
+)
 
-ImageKey = str | tuple[str | None, ...]
-
-
-def _image_key(record: Record, image_field: str) -> ImageKey | None:
-    """Return a stable key for the image in this record, or None if unavailable.
-
-    A list of images keys as the tuple of its images' keys.
-    """
-    img = record.get(image_field)
-    if isinstance(img, list | tuple):
-        return tuple(_single_image_key(i) for i in img) or None
-    return _single_image_key(img)
-
-
-def _single_image_key(img: Any) -> str | None:
-    if img is None:
-        return None
-    if isinstance(img, dict):
-        # HuggingFace Image(decode=False) → {"bytes": ..., "path": ...}
-        raw = img.get("bytes")
-        if raw:
-            return hashlib.md5(raw).hexdigest()
-        return img.get("path")
-    if isinstance(img, (str, bytes)):
-        return str(img)
-    return None
+Group = list[tuple[int, Record]]
 
 
 def _scan(records: list[Record], fields: FieldMap) -> list[Finding]:
-    findings = []
+    by_text: dict[TextKey, Group] = defaultdict(list)
+    for i, record in enumerate(records):
+        by_text[text_key(record, fields)].append((i, record))
+    groups = [(key, group) for key, group in by_text.items() if len(group) > 1]
 
     if fields.image is not None:
-        findings.extend(_scan_with_image(records, fields))
-    else:
-        findings.extend(_scan_without_image(records, fields))
-
-    return findings
+        return [f for key, group in groups for f in _image_group_findings(key, group, fields)]
+    return [f for key, group in groups for f in _text_group_findings(key, group, fields)]
 
 
-def _scan_with_image(records: list[Record], fields: FieldMap) -> list[Finding]:
-    """When an image field is known, use (question, image) as the sample identity.
+def _image_group_findings(key: TextKey, group: Group, fields: FieldMap) -> list[Finding]:
+    """Findings for records that share their text and choices, when images are known.
 
     Three cases:
-    - Same question + same image  → HIGH: real duplicate, likely a copy error
-    - Same question + diff image + same answer → MEDIUM: question is image-independent
+    - Same text + same images  → HIGH: real duplicate, likely a copy error
+    - Same text + diff images + same answer → MEDIUM: question is image-independent
       (the image contributes nothing — a model could answer without seeing it)
-    - Same question + diff image + diff answer → LOW: standard VQA reuse, informational
+    - Same text + diff images + diff answer → LOW: standard VQA reuse, informational
     """
-    assert fields.image is not None
-
-    # Group by normalised question
-    by_question: dict[str, list[tuple[int, Record]]] = defaultdict(list)
-    for i, record in enumerate(records):
-        q = str(record.get(fields.question, "") or "").strip().lower()
-        by_question[q].append((i, record))
+    by_image: dict[ImageKey, Group] = defaultdict(list)
+    for idx, record in group:
+        by_image[image_key(record, fields)].append((idx, record))
 
     findings = []
-    for q_text, occurrences in by_question.items():
-        if len(occurrences) <= 1:
+    for img_key, dups in by_image.items():
+        if len(dups) <= 1:
             continue
-
-        img_keys = [_image_key(r, fields.image) for _, r in occurrences]
-        answers = [str(r.get(fields.answer, "") or "").strip().lower() for _, r in occurrences]
-        indices = [idx for idx, _ in occurrences]
-
-        # Group occurrences by image key to find exact (question, image) duplicates
-        by_image: dict[ImageKey | None, list[tuple[int, Record]]] = defaultdict(list)
-        for (idx, record), img_key in zip(occurrences, img_keys, strict=True):
-            by_image[img_key].append((idx, record))
-
-        # Emit HIGH finding for any (question, image) group that appears more than once
-        for dups in by_image.values():
-            if len(dups) <= 1:
-                continue
-            dup_indices = [idx for idx, _ in dups]
-            for idx, record in dups:
-                findings.append(
-                    Finding(
-                        scanner="duplicate_questions",
-                        severity="high",
-                        category="question_quality",
-                        explanation=(
-                            f"Question and image both appear {len(dups)} times "
-                            f"(at indices {dup_indices}). This is a real duplicate sample."
-                        ),
-                        sample_index=idx,
-                        sample_id=get_sample_id(record, fields, idx),
-                        metadata={
-                            "question": q_text,
-                            "duplicate_indices": dup_indices,
-                            "duplicate_count": len(dups),
-                            "duplicate_type": "exact",
-                        },
-                    )
-                )
-
-        # Only emit question-reuse findings when images genuinely differ. No image (None)
-        # counts as its own image, so a question asked with and without one is reuse.
-        unique_img_keys = set(img_keys)
-        if len(unique_img_keys) <= 1:
-            continue  # all same image — already handled above as exact duplicates
-
-        answers_agree = len(set(answers)) == 1
-        if answers_agree:
-            # Same question asked about different images, always gets the same answer —
-            # the question is not actually image-dependent.
-            severity: str = "medium"
-            explanation = (
-                f"Question appears {len(occurrences)} times across different images, "
-                f"always with the same answer {answers[0]!r} (at indices {indices}). "
-                f"The question appears image-independent — a model could answer it "
-                f"without looking at the image."
+        agree = _answers_agree(dups, fields)
+        shared = f"{_subject(key)} and image" if img_key else f"{_subject(key)}, with no image"
+        findings.extend(
+            _group_findings(
+                dups,
+                fields,
+                severity="high",
+                explanation=(
+                    f"{len(dups)} samples share the {shared} (at indices {_indices(dups)}). "
+                    "This is a real duplicate sample."
+                ),
+                metadata={
+                    "question": key[0],
+                    "duplicate_type": "exact",
+                    "answers_agree": agree,
+                },
             )
-        else:
-            # Same question, different images, different answers — standard VQA pattern.
-            severity = "low"
-            explanation = (
-                f"Question text appears {len(occurrences)} times across different images "
-                f"with different answers (at indices {indices}). "
-                f"This is expected in VQA datasets but worth verifying."
-            )
+        )
 
-        for idx, record in occurrences:
-            findings.append(
-                Finding(
-                    scanner="duplicate_questions",
-                    severity=severity,  # type: ignore[arg-type]
-                    category="question_quality",
-                    explanation=explanation,
-                    sample_index=idx,
-                    sample_id=get_sample_id(record, fields, idx),
-                    metadata={
-                        "question": q_text,
-                        "duplicate_indices": indices,
-                        "duplicate_count": len(occurrences),
-                        "duplicate_type": "question_reuse",
-                        "answers_agree": answers_agree,
-                    },
-                )
-            )
+    # Only emit question-reuse findings when images genuinely differ. No image (None)
+    # counts as its own image, so a question asked with and without one is reuse.
+    if len(by_image) <= 1:
+        return findings
 
+    agree = _answers_agree(group, fields)
+    if agree:
+        # Same question asked about different images, always gets the same answer —
+        # the question is not actually image-dependent.
+        severity: Severity = "medium"
+        explanation = (
+            f"{len(group)} samples share the {_subject(key)} across different images, "
+            f"always with the same answer {_answer_text(group[0][1], fields)!r} "
+            f"(at indices {_indices(group)}). The question appears image-independent: "
+            "a model could answer it without looking at the image."
+        )
+    else:
+        # Same question, different images, different answers — standard VQA pattern.
+        severity = "low"
+        explanation = (
+            f"{len(group)} samples share the {_subject(key)} across different images, "
+            f"with different answers (at indices {_indices(group)}). "
+            "This is expected in VQA datasets but worth verifying."
+        )
+    findings.extend(
+        _group_findings(
+            group,
+            fields,
+            severity=severity,
+            explanation=explanation,
+            metadata={
+                "question": key[0],
+                "duplicate_type": "question_reuse",
+                "answers_agree": agree,
+            },
+        )
+    )
     return findings
 
 
-def _scan_without_image(records: list[Record], fields: FieldMap) -> list[Finding]:
-    """Without an image field, group by question only and classify by answer agreement."""
-    seen: dict[str, list[tuple[int, Record]]] = defaultdict(list)
-    for i, record in enumerate(records):
-        q = str(record.get(fields.question, "") or "").strip().lower()
-        seen[q].append((i, record))
+def _text_group_findings(key: TextKey, group: Group, fields: FieldMap) -> list[Finding]:
+    """Without an image field, classify records sharing their text by answer agreement."""
+    agree = _answers_agree(group, fields)
+    if agree:
+        severity: Severity = "high"
+        explanation = (
+            f"{len(group)} samples share the {_subject(key)}, with the same answer "
+            f"{_answer_text(group[0][1], fields)!r} (at indices {_indices(group)}). "
+            "This is likely a duplicated sample."
+        )
+    else:
+        severity = "low"
+        explanation = (
+            f"{len(group)} samples share the {_subject(key)}, with different answers "
+            f"(at indices {_indices(group)}). "
+            "In multimodal datasets this is expected — use --image-field "
+            "for precise classification."
+        )
+    return _group_findings(
+        group,
+        fields,
+        severity=severity,
+        explanation=explanation,
+        metadata={"question": key[0], "answers_agree": agree},
+    )
 
-    findings = []
-    for q_text, occurrences in seen.items():
-        if len(occurrences) <= 1:
-            continue
 
-        indices = [idx for idx, _ in occurrences]
-        answers = [str(r.get(fields.answer, "") or "").strip().lower() for _, r in occurrences]
-        answers_agree = len(set(answers)) == 1
+def _group_findings(
+    group: Group,
+    fields: FieldMap,
+    *,
+    severity: Severity,
+    explanation: str,
+    metadata: dict[str, Any],
+) -> list[Finding]:
+    indices = [idx for idx, _ in group]
+    return [
+        Finding(
+            scanner="duplicate_questions",
+            severity=severity,
+            category="question_quality",
+            explanation=explanation,
+            sample_index=idx,
+            sample_id=get_sample_id(record, fields, idx),
+            metadata={
+                **metadata,
+                "duplicate_indices": indices,
+                "duplicate_count": len(group),
+            },
+        )
+        for idx, record in group
+    ]
 
-        if answers_agree:
-            severity: str = "high"
-            explanation = (
-                f"Question appears {len(occurrences)} times with the same answer "
-                f"{answers[0]!r} (at indices {indices}). "
-                "This is likely a duplicated sample."
-            )
-        else:
-            severity = "low"
-            explanation = (
-                f"Question appears {len(occurrences)} times with different answers "
-                f"(at indices {indices}). "
-                "In multimodal datasets this is expected — use --image-field "
-                "for precise classification."
-            )
 
-        for idx, record in occurrences:
-            findings.append(
-                Finding(
-                    scanner="duplicate_questions",
-                    severity=severity,  # type: ignore[arg-type]
-                    category="question_quality",
-                    explanation=explanation,
-                    sample_index=idx,
-                    sample_id=get_sample_id(record, fields, idx),
-                    metadata={
-                        "question": q_text,
-                        "duplicate_indices": indices,
-                        "duplicate_count": len(occurrences),
-                        "answers_agree": answers_agree,
-                    },
-                )
-            )
+def _answers_agree(group: Group, fields: FieldMap) -> bool:
+    return len({answer_key(record, fields) for _, record in group}) == 1
 
-    return findings
+
+def _answer_text(record: Record, fields: FieldMap) -> str:
+    answers = sorted(answer_key(record, fields))
+    return answers[0] if len(answers) == 1 else " | ".join(answers)
+
+
+def _subject(key: TextKey) -> str:
+    return "question" if key[1] is None else "question and choices"
+
+
+def _indices(group: Group) -> list[int]:
+    return [idx for idx, _ in group]
 
 
 duplicate_questions = ScannerDef(
     name="duplicate_questions",
     fn=_scan,
     description=(
-        "Flag questions that appear more than once. "
+        "Flag samples that appear more than once. A sample is its question text, "
+        "its choices when it has them, and its images by content. "
         "With an image field (--image-field, or the input images of a task): "
         "exact (question+image) duplicates are HIGH; "
         "same question across different images with same answer is MEDIUM "
