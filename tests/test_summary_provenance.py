@@ -44,8 +44,8 @@ def test_runner_takes_scorers_from_field_map():
 
 
 async def test_async_runner_records_task_and_scorers():
-    fields = FieldMap(question="q", answer="a")
-    run = await run_scanners_async(list(_RECORDS), fields, [], task="pkg/t", scorers=["x"])
+    fields = FieldMap(question="q", answer="a", scorers=["x"])
+    run = await run_scanners_async(list(_RECORDS), fields, [], task="pkg/t")
     assert run.task == "pkg/t"
     assert run.scorers == ["x"]
 
