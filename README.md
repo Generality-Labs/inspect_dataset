@@ -20,6 +20,9 @@ uv add inspect-dataset
 # Scan a HuggingFace dataset
 inspect-dataset scan flaviagiammarino/vqa-rad --split test -o findings/
 
+# Pick a config and split (needed when the dataset has several configs, or several splits and none is "train")
+inspect-dataset scan allenai/ai2_arc --config ARC-Challenge --split test -o findings/
+
 # Pin to a specific revision
 inspect-dataset scan flaviagiammarino/vqa-rad --revision abc123 -o findings/
 
@@ -149,6 +152,8 @@ findings/
 ```
 
 Each finding includes the scanner name, severity, category, explanation, sample index, sample ID (if available), and scanner-specific metadata.
+
+`scan_summary.json` records the `split` and `config` that were scanned. For a HuggingFace dataset these are filled in when not given: the only split, or `train` when there are several, and the only config or the dataset's default one. `split_defaulted` and `config_defaulted` say whether each was filled in (`true`) or given (`false`). Both are `null` for task and local scans. When the dataset has several splits and none is `train`, or several configs and no default, the scan stops and lists the choices.
 
 ## Integration with inspect-scout
 
