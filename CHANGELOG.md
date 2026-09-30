@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- Task scans join each sample to the raw dataset row it came from and keep it under `__source__`. Rows come from inspect_ai's `hf_dataset`, `csv_dataset` and `json_dataset` as the task builds, or, for samples built by hand, from a `datasets.load_dataset` table matched by sample id. `source.<column>` in `--question-field`, `--answer-field`, `--id-field`, `--image-field` and `--group-by` names a column of that row. `scan_summary.json` gains a `source` key with the join counts and every load the task made, including its config, split and revision ([#53](https://github.com/Generality-Labs/inspect_dataset/issues/53)).
 - `scanner_status` in `scan_summary.json`: `{"status": "ran"}` or `{"status": "not_applicable", "reason": ...}` for every scanner run, so a consumer can tell "checked and clean" from "did not apply". Not-applicable scanners are also listed in the terminal report and `REPORT.md`.
 - `inspect_dataset.ScannerNotApplicable`, which a scanner raises to be recorded as not applicable.
 - `--answer-subfield PATH` for `scan`: a dotted path to the scalar that `answer_length` and `inconsistent_format` measure inside a list or struct answer column. Lists along the path are measured element by element, and `*` measures each element of a list of strings. Findings made this way carry `answer_subfield` and `element_index` in their metadata.

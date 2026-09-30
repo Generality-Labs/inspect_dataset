@@ -191,6 +191,18 @@ A task spec such as `inspect_evals/drop` loads the task's samples. Each record h
 
 `answer_distribution` and `binary_question_ratio` measure a letter target as the text of the choice it names, so a multiple-choice task with the choices Yes and No counts yes and no answers rather than A and B. `answer_distribution` also checks the target letters, because one letter holding 85% of targets is an answer-position bias under `choice()`. Their findings carry `measured` in the metadata, `"choice_text"` or `"letter"`, and say which one in the explanation. Without choices, or when no target is a letter that names a choice, both scanners measure the answer as it is and add no `measured` key.
 
+Each task record also carries the raw dataset row its sample came from, under `__source__`. inspect-dataset records the rows while the task builds its dataset. Samples built by inspect_ai's `hf_dataset`, `csv_dataset` or `json_dataset` get their exact row, even when the dataset is shuffled. Samples an eval builds by hand from `datasets.load_dataset` are matched to a row by their id, using whichever column of the loaded tables holds unique values that match the most ids. In a field option or `--group-by`, `source.<column>` names a column of that row, so any scanner can check a field the eval never puts in the sample:
+
+```bash
+# Check MATH's worked solutions, which the task does not show the model
+inspect-dataset scan inspect_evals/math --answer-field source.solution --scanners encoding_issues,latex_escapes
+
+# Check MMLU-Pro's answer positions within each original source dataset (its raw src column)
+inspect-dataset scan inspect_evals/mmlu_pro --group-by source.src --scanners answer_distribution
+```
+
+`scan_summary.json` has a `source` key for task scans: how many samples were joined (`joined`, `total`), by record and by id (`joined_by_record`, `joined_by_id`, `id_column`), and every `datasets.load_dataset` call the task made, with its config, split and revision (`loads`). It is `null` for HuggingFace and local scans. Plugin scanners can read `record["__source__"]`. `samples.json` does not include the raw rows.
+
 ## Integration with inspect-scout
 
 inspect-scout tracks which samples models consistently fail or succeed on. inspect-dataset provides a complementary static pass before running evals. A future release will accept inspect-scout results directly to produce eval-informed findings and a `clean_ids.txt` export for quality-adjusted benchmark scores.
