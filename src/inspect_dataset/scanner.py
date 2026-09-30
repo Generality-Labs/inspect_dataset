@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable, Coroutine
-from typing import Any
+from collections.abc import Callable, Coroutine, Iterable, Mapping
+from typing import Any, Literal, get_args
 
 from inspect_dataset._types import FieldMap, Finding, Record, ScanRun
 
@@ -22,35 +22,65 @@ class ScannerNotApplicable(Exception):  # noqa: N818 -- a status, not an error
         self.reason = reason
 
 
+Requirement = Literal["answer", "image", "artifacts"]
+"""An input a scanner needs. The runner checks each one before calling the scanner.
+
+- ``answer``: at least one row has a non-empty value in the answer field.
+- ``image``: an image field is set and at least one row has a value in it.
+- ``artifacts``: at least one row has an extraction artifacts directory (``--files-root``).
+"""
+
+_REQUIREMENTS: tuple[Requirement, ...] = get_args(Requirement)
+
+
+def _validate_requires(requires: Requirement | Iterable[Requirement]) -> tuple[Requirement, ...]:
+    names = (requires,) if isinstance(requires, str) else tuple(requires)
+    unknown = [n for n in names if n not in _REQUIREMENTS]
+    if unknown:
+        raise ValueError(
+            f"unknown scanner requirement(s) {', '.join(map(repr, unknown))}; "
+            f"expected one of {', '.join(map(repr, _REQUIREMENTS))}"
+        )
+    return tuple(dict.fromkeys(names))
+
+
 class ScannerDef:
-    """A named scanner with metadata."""
+    """A named scanner with metadata.
+
+    ``requires`` names the inputs the scanner needs (see ``Requirement``). When one is
+    missing, the runner records the scanner as ``not_applicable`` without calling it.
+    """
 
     def __init__(
         self,
         name: str,
         fn: DatasetScanner,
         description: str = "",
+        requires: Requirement | Iterable[Requirement] = (),
     ) -> None:
         self.name = name
         self.fn = fn
         self.description = description
+        self.requires = _validate_requires(requires)
 
     def __call__(self, records: list[Record], fields: FieldMap) -> list[Finding]:
         return self.fn(records, fields)
 
 
 class LLMScannerDef:
-    """An async scanner that requires an LLM model."""
+    """An async scanner that requires an LLM model. ``requires`` works as for ``ScannerDef``."""
 
     def __init__(
         self,
         name: str,
         fn: AsyncDatasetScanner,
         description: str = "",
+        requires: Requirement | Iterable[Requirement] = (),
     ) -> None:
         self.name = name
         self.fn = fn
         self.description = description
+        self.requires = _validate_requires(requires)
 
     async def __call__(self, records: list[Record], fields: FieldMap) -> list[Finding]:
         return await self.fn(records, fields)
@@ -58,23 +88,59 @@ class LLMScannerDef:
 
 def dataset_scanner(
     description: str = "",
+    requires: Requirement | Iterable[Requirement] = (),
 ) -> Callable[[DatasetScanner], ScannerDef]:
     """Decorator that wraps a scanner function into a ScannerDef.
 
     Usage::
 
-        @dataset_scanner(description="Flag long answers")
+        @dataset_scanner(description="Flag long answers", requires=["answer"])
         def answer_length(records, fields):
             ...
     """
+    requires = _validate_requires(requires)
 
     def decorator(fn: DatasetScanner) -> ScannerDef:
-        return ScannerDef(name=fn.__name__, fn=fn, description=description)
+        return ScannerDef(name=fn.__name__, fn=fn, description=description, requires=requires)
 
     return decorator
 
 
 AnyScanner = ScannerDef | LLMScannerDef
+
+
+def _is_empty(value: Any) -> bool:
+    if value is None:
+        return True
+    if isinstance(value, str):
+        return not value.strip()
+    if isinstance(value, Mapping | list | tuple | set | frozenset):
+        return not value
+    return getattr(value, "size", 1) == 0
+
+
+def _unmet_requirements(
+    records: list[Record], fields: FieldMap, source_type: str
+) -> dict[Requirement, str]:
+    """The reason each unmet requirement gives for a scanner not applying."""
+    unmet: dict[Requirement, str] = {}
+    if all(_is_empty(r.get(fields.answer)) for r in records):
+        unmet["answer"] = f"no non-empty answers in field {fields.answer!r}"
+    if fields.image is None:
+        unmet["image"] = (
+            "no image field; task scans do not load images from sample input yet"
+            if source_type == "inspect_task"
+            else "no image field; pass --image-field"
+        )
+    elif all(r.get(fields.image) is None for r in records):
+        unmet["image"] = f"image field {fields.image!r} is empty in every row"
+    if not any(r.get("__artifacts_dir__") for r in records):
+        unmet["artifacts"] = "no extraction artifacts; pass --files-root"
+    return unmet
+
+
+def _not_applicable_reason(scanner: AnyScanner, unmet: dict[Requirement, str]) -> str | None:
+    return next((unmet[r] for r in scanner.requires if r in unmet), None)
 
 
 def run_scanners(
@@ -96,8 +162,13 @@ def run_scanners(
         )
     all_findings: list[Finding] = []
     status: dict[str, dict[str, str]] = {}
+    unmet = _unmet_requirements(records, fields, source_type)
     for scanner in scanners:
         assert isinstance(scanner, ScannerDef)
+        reason = _not_applicable_reason(scanner, unmet)
+        if reason is not None:
+            status[scanner.name] = {"status": "not_applicable", "reason": reason}
+            continue
         try:
             findings = scanner(records, fields)
         except ScannerNotApplicable as e:
@@ -146,7 +217,16 @@ async def run_scanners_async(
     )
 
     # Run async (LLM) scanners concurrently
-    async_scanners = [s for s in scanners if isinstance(s, LLMScannerDef)]
+    async_scanners: list[LLMScannerDef] = []
+    unmet = _unmet_requirements(records, fields, source_type)
+    for s in scanners:
+        if not isinstance(s, LLMScannerDef):
+            continue
+        reason = _not_applicable_reason(s, unmet)
+        if reason is None:
+            async_scanners.append(s)
+        else:
+            run.scanner_status[s.name] = {"status": "not_applicable", "reason": reason}
     if async_scanners:
 
         async def _guarded(scanner: LLMScannerDef) -> list[Finding] | ScannerNotApplicable:
