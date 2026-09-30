@@ -48,7 +48,7 @@ _COMMANDS = frozenset(
         "textsuperscript", "textsubscript", "tag",
         # \v
         "vec", "varepsilon", "varphi", "vartheta", "varrho", "varsigma", "varpi",
-        "varkappa", "varnothing", "vee", "vert", "Vert", "vdots", "vdash", "vline",
+        "varkappa", "varnothing", "vee", "vert", "vdots", "vdash", "vline",
         "vspace", "vskip", "vphantom",
     }
 )  # fmt: skip
