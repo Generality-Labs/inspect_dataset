@@ -54,6 +54,8 @@ class ScanRun:
     source_type: str = "hf"  # "hf" | "inspect_task"
     revision: str | None = None  # HF revision / commit SHA
     config: str | None = None  # HF config/subset name (multi-config datasets)
+    # scanner name → {"status": "ran"} or {"status": "not_applicable", "reason": ...}
+    scanner_status: dict[str, dict[str, str]] = field(default_factory=dict)
 
     def by_scanner(self) -> dict[str, list[Finding]]:
         result: dict[str, list[Finding]] = {}
