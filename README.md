@@ -179,7 +179,9 @@ The names are `"answer"` (at least one row has a non-empty answer), `"image"` (a
 
 `scan_summary.json` records the `split` and `config` that were scanned. For a HuggingFace dataset these are filled in when not given: the only split, or `train` when there are several, and the only config or the dataset's default one. `split_defaulted` and `config_defaulted` say whether each was filled in (`true`) or given (`false`). Both are `null` for task and local scans. When the dataset has several splits and none is `train`, or several configs and no default, the scan stops and lists the choices.
 
-`scan_summary.json` records where the findings came from. `version` is the inspect-dataset version that ran the scan. When the dataset is an inspect_ai task, `task` is the task spec as given on the command line and `scorers` lists the registry names of the task's scorers, such as `["inspect_ai/choice"]`. Both are `null` for HuggingFace and local scans.
+`scan_summary.json` records where the findings came from. `version` is the inspect-dataset version that ran the scan. When the dataset is an inspect_ai task, `task` is the task spec as given on the command line and `scorers` lists the registry names of the task's scorers, such as `["inspect_ai/choice"]`. A task with no scorer has `[]`, and scorers that are not inspect_ai registry objects are left out. Both are `null` for HuggingFace and local scans.
+
+`scan_summary.json` records the `split` and `config` that were scanned. For a HuggingFace dataset these are filled in when not given: the only split, or `train` when there are several, and the only config or the dataset's default one. `split_defaulted` and `config_defaulted` say whether each was filled in (`true`) or given (`false`). Both are `null` for task and local scans. When the dataset has several splits and none is `train`, or several configs and no default, the scan stops and lists the choices.
 
 ## Integration with inspect-scout
 
