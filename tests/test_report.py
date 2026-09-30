@@ -10,7 +10,7 @@ from rich.console import Console
 
 from inspect_dataset._types import FieldMap, Finding, ScanRun
 from inspect_dataset.report import print_report, save_findings
-from inspect_dataset.scanner import run_scanners
+from inspect_dataset.scanner import run_scanners, run_scanners_async
 from inspect_dataset.scanners.answer_distribution import answer_distribution
 
 
@@ -135,3 +135,14 @@ def test_run_scanners_takes_group_by_from_fields():
 def test_run_scanners_without_group_records_none():
     run = run_scanners([{"q": "q", "a": "yes"}], FieldMap(question="q", answer="a"), [])
     assert (run.group_by, run.group_by_source) == (None, None)
+
+
+async def test_run_scanners_async_records_group_by():
+    records = [{"q": "q", "a": "yes", "s": "x"}]
+    run = await run_scanners_async(
+        records,
+        FieldMap(question="q", answer="a", group="s"),
+        [answer_distribution],
+        group_by_source="option",
+    )
+    assert (run.group_by, run.group_by_source) == ("s", "option")
