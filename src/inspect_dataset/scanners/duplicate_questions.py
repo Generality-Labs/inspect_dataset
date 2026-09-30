@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Mapping
 from typing import Any
 
 from inspect_dataset._types import FieldMap, Finding, Record, Severity
@@ -26,7 +27,8 @@ def _scan(records: list[Record], fields: FieldMap) -> list[Finding]:
 
     if fields.image is not None:
         return [f for key, group in groups for f in _image_group_findings(key, group, fields)]
-    return [_text_group_finding(key, group, fields) for key, group in groups]
+    image_column = _image_like_column(records) if fields.scorers is None else None
+    return [_text_group_finding(key, group, fields, image_column) for key, group in groups]
 
 
 def _image_group_findings(key: TextKey, group: Group, fields: FieldMap) -> list[Finding]:
@@ -105,8 +107,14 @@ def _image_group_findings(key: TextKey, group: Group, fields: FieldMap) -> list[
     return findings
 
 
-def _text_group_finding(key: TextKey, group: Group, fields: FieldMap) -> Finding:
-    """Without an image field, classify records sharing their text by answer agreement."""
+def _text_group_finding(
+    key: TextKey, group: Group, fields: FieldMap, image_column: str | None
+) -> Finding:
+    """Without an image field, classify records sharing their text by answer agreement.
+
+    ``image_column`` is an HF column that looks like images, named in the advice to pass
+    --image-field. Task mode already compares its images, so it never gets that advice.
+    """
     agree = _answers_agree(group, fields)
     if agree:
         severity: Severity = "high"
@@ -120,8 +128,11 @@ def _text_group_finding(key: TextKey, group: Group, fields: FieldMap) -> Finding
         explanation = (
             f"{len(group)} samples share the {_subject(key)}, with different answers "
             f"(at indices {_indices(group)}). "
-            "In multimodal datasets this is expected — use --image-field "
-            "for precise classification."
+            + (
+                f"If they differ by image, pass --image-field {image_column} to compare images."
+                if image_column is not None
+                else "Check whether the answers conflict."
+            )
         )
     return _group_finding(
         group,
@@ -159,6 +170,16 @@ def _group_finding(
     )
 
 
+def _image_like_column(records: list[Record]) -> str | None:
+    """The first column holding an HF image value (a dict with ``bytes``) or a list of them."""
+    for record in records:
+        for column, value in record.items():
+            first = value[0] if isinstance(value, list | tuple) and value else value
+            if isinstance(first, Mapping) and "bytes" in first:
+                return column
+    return None
+
+
 def _answers_agree(group: Group, fields: FieldMap) -> bool:
     return len({answer_key(record, fields) for _, record in group}) == 1
 
@@ -190,6 +211,6 @@ duplicate_questions = ScannerDef(
         "exact (question+image) duplicates are HIGH; "
         "same question across different images with same answer is MEDIUM "
         "(image-independent question); different answers is LOW (standard VQA reuse). "
-        "Without --image-field: same-answer duplicates are HIGH, different-answer are LOW."
+        "Without an image field: same-answer duplicates are HIGH, different-answer are LOW."
     ),
 )

@@ -315,3 +315,36 @@ def test_list_targets_with_different_members_disagree():
     findings = duplicate_questions(data, TASK_FIELDS)
     assert findings
     assert all(f.metadata["answers_agree"] is False for f in findings)
+
+
+# ---------------------------------------------------------------------------
+# The --image-field advice appears only where it can help
+# ---------------------------------------------------------------------------
+
+
+def conflicting(**extra) -> list[dict]:
+    return [
+        {"q": "is it enlarged?", "a": "yes", **extra},
+        {"q": "is it enlarged?", "a": "no", **extra},
+    ]
+
+
+def test_image_field_advice_names_an_image_like_column():
+    [finding] = duplicate_questions(conflicting(scan={"bytes": b"x", "path": None}), FIELDS)
+    assert "--image-field scan" in finding.explanation
+
+
+def test_image_field_advice_finds_a_list_of_images():
+    [finding] = duplicate_questions(conflicting(pics=[{"bytes": b"x", "path": "a.png"}]), FIELDS)
+    assert "--image-field pics" in finding.explanation
+
+
+def test_no_image_field_advice_without_an_image_like_column():
+    [finding] = duplicate_questions(conflicting(meta={"source": "x"}), FIELDS)
+    assert "--image-field" not in finding.explanation
+
+
+def test_no_image_field_advice_in_task_mode():
+    fields = FieldMap(question="q", answer="a", scorers=["inspect_ai/match"])
+    [finding] = duplicate_questions(conflicting(scan={"bytes": b"x", "path": None}), fields)
+    assert "--image-field" not in finding.explanation
