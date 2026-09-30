@@ -113,14 +113,14 @@ def test_image_requirement_unmet_without_image_field():
     }
 
 
-def test_image_requirement_reason_in_task_mode_says_images_are_not_loaded():
+def test_image_requirement_reason_in_task_mode_says_no_sample_has_an_image():
     scanner = ScannerDef(name="needs_image", fn=_Recorder(), requires=["image"])
     run = run_scanners(
         [{"q": "question", "a": "yes"}], FIELDS, [scanner], source_type="inspect_task"
     )
     assert run.scanner_status["needs_image"] == {
         "status": "not_applicable",
-        "reason": "no image field; task scans do not load images from sample input yet",
+        "reason": "no image field; no sample in the task has an image",
     }
 
 
