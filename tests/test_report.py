@@ -6,8 +6,12 @@ import json
 import tempfile
 from pathlib import Path
 
-from inspect_dataset._types import Finding, ScanRun
-from inspect_dataset.report import save_findings
+from rich.console import Console
+
+from inspect_dataset._types import FieldMap, Finding, ScanRun
+from inspect_dataset.report import print_report, save_findings
+from inspect_dataset.scanner import run_scanners
+from inspect_dataset.scanners.answer_distribution import answer_distribution
 
 
 def _make_run(**kwargs) -> ScanRun:
@@ -81,3 +85,53 @@ def test_summary_default_source_type():
         save_findings(run, Path(d))
         summary = json.loads((Path(d) / "scan_summary.json").read_text())
     assert summary["source_type"] == "hf"
+
+
+def test_summary_records_grouping():
+    run = _make_run(group_by="dataset_name", group_by_source="auto")
+    with tempfile.TemporaryDirectory() as d:
+        save_findings(run, Path(d))
+        summary = json.loads((Path(d) / "scan_summary.json").read_text())
+        report = (Path(d) / "REPORT.md").read_text()
+    assert summary["group_by"] == "dataset_name"
+    assert summary["group_by_source"] == "auto"
+    assert "**Grouped by:** `dataset_name` (auto)" in report
+
+
+def test_summary_grouping_defaults_to_none():
+    run = _make_run()
+    with tempfile.TemporaryDirectory() as d:
+        save_findings(run, Path(d))
+        summary = json.loads((Path(d) / "scan_summary.json").read_text())
+        report = (Path(d) / "REPORT.md").read_text()
+    assert summary["group_by"] is None
+    assert summary["group_by_source"] is None
+    assert "Grouped by" not in report
+
+
+def test_terminal_header_shows_grouping():
+    console = Console(record=True, width=200)
+    print_report(_make_run(group_by="subject", group_by_source="option"), console=console)
+    assert "Grouped by: subject (option)" in console.export_text()
+
+
+def test_terminal_header_omits_grouping_when_off():
+    console = Console(record=True, width=200)
+    print_report(_make_run(), console=console)
+    assert "Grouped by" not in console.export_text()
+
+
+def test_run_scanners_takes_group_by_from_fields():
+    records = [{"q": "q", "a": "yes", "s": "x"}]
+    run = run_scanners(
+        records,
+        FieldMap(question="q", answer="a", group="s"),
+        [answer_distribution],
+        group_by_source="option",
+    )
+    assert (run.group_by, run.group_by_source) == ("s", "option")
+
+
+def test_run_scanners_without_group_records_none():
+    run = run_scanners([{"q": "q", "a": "yes"}], FieldMap(question="q", answer="a"), [])
+    assert (run.group_by, run.group_by_source) == (None, None)

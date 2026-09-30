@@ -63,6 +63,8 @@ class ScanRun:
     source_type: str = "hf"  # "hf" | "inspect_task"
     revision: str | None = None  # HF revision / commit SHA
     config: str | None = None  # HF config/subset name (multi-config datasets)
+    group_by: str | None = None  # FieldMap.group the population scanners grouped by
+    group_by_source: str | None = None  # how group_by was chosen: "option" | "auto" | None
     # scanner name → {"status": "ran"} or {"status": "not_applicable", "reason": ...}
     scanner_status: dict[str, dict[str, str]] = field(default_factory=dict)
     # HF mode: whether split/config were filled in rather than given. None for other sources.
