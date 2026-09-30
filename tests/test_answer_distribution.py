@@ -209,3 +209,20 @@ def test_list_targets_with_choices_are_measured_as_before():
     for i, row in enumerate(rows):
         row["choices"] = ["Yes", "No"] if i % 2 else ["No", "Yes"]
     assert answer_distribution(rows, CHOICE_FIELDS) == answer_distribution(rows, FIELDS) == []
+
+
+def test_choice_text_and_letters_are_checked_per_group():
+    fields = FieldMap(question="q", answer="a", choices="choices", group="subset")
+    # Subset a always has the answer in first position; subset b alternates. Texts never repeat.
+    recs = [
+        {"q": f"a{i}", "a": "A", "choices": [f"x{i}", f"y{i}"], "subset": "a"} for i in range(20)
+    ]
+    recs += [
+        {"q": f"b{i}", "a": "AB"[i % 2], "choices": [f"x{i}", f"y{i}"], "subset": "b"}
+        for i in range(20)
+    ]
+    findings = answer_distribution(recs, fields)
+    assert [(f.metadata["measured"], f.metadata["group"]) for f in findings] == [("letter", "a")]
+    assert findings[0].explanation.startswith(
+        "Answer positions in group subset='a' are heavily imbalanced: 20/20 samples"
+    )
