@@ -6,6 +6,7 @@ from typing import Any
 
 from rich import box
 from rich.console import Console
+from rich.markup import escape
 from rich.table import Table
 
 from inspect_dataset._types import FieldMap, Record, ScanRun
@@ -36,7 +37,7 @@ def print_report(run: ScanRun, console: Console | None = None) -> None:
     console.print(f"  Samples: {run.total_samples:,}")
     console.print(f"  Total findings: {len(run.findings):,}")
     for name, reason in _not_applicable(run):
-        console.print(f"  [dim]Not applicable: {name} ({reason})[/dim]")
+        console.print(f"  [dim]Not applicable: {escape(name)} ({escape(reason)})[/dim]")
     console.print()
 
     if not run.findings:

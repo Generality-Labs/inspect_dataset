@@ -5,9 +5,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from rich.console import Console
+
 from inspect_dataset import LLMScannerDef, ScannerDef, ScannerNotApplicable
 from inspect_dataset._types import FieldMap, Finding, Record
-from inspect_dataset.report import save_findings
+from inspect_dataset.report import print_report, save_findings
 from inspect_dataset.scanner import run_scanners, run_scanners_async
 
 FIELDS = FieldMap(question="q", answer="a")
@@ -38,6 +40,19 @@ def test_plugin_scanner_can_report_not_applicable(tmp_path: Path):
     assert summary["scanner_status"] == run.scanner_status
     assert summary["by_scanner"] == {}
     assert "- `never_applies`: needs --files-root" in (tmp_path / "REPORT.md").read_text()
+
+
+def test_terminal_report_lists_not_applicable_reason_verbatim():
+    def _bracketed_reason(records: list[Record], fields: FieldMap) -> list[Finding]:
+        raise ScannerNotApplicable("needs list[str] answers, not [/dim] markup")
+
+    run = run_scanners(RECORDS, FIELDS, [ScannerDef(name="bracketed", fn=_bracketed_reason)])
+    console = Console(record=True, width=200)
+    print_report(run, console=console)
+    assert (
+        "Not applicable: bracketed (needs list[str] answers, not [/dim] markup)"
+        in console.export_text()
+    )
 
 
 async def test_async_runner_records_status_for_sync_and_llm_scanners():
