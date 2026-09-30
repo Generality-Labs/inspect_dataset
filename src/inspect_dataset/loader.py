@@ -329,14 +329,22 @@ def detect_group_field(records: list[Record], metadata_keys: set[str]) -> str | 
     return qualifying[0] if len(qualifying) == 1 else None
 
 
+def _target_list(target: Any) -> list[str]:
+    """Every target string of an inspect_ai Sample.target value, which may be a list."""
+    if isinstance(target, list):
+        return [str(t) for t in target]
+    return [str(target)] if target is not None else []
+
+
 def load_inspect_task(task_or_fn: Any, limit: int | None = None) -> tuple[list[Record], FieldMap]:
     """Load records from an inspect_ai Task object or task function.
 
     Converts each ``inspect_ai.Sample`` to a plain ``Record`` dict using the
     fixed field mapping: ``input`` → question, ``target`` → answer, ``id`` → id.
-    ``choices`` and ``metadata`` are preserved in the record for scanners that
-    can use them. ``files`` is stored under ``__files__`` for future use by the
-    view server.
+    ``target`` is the first target string and ``targets`` holds every target
+    string. ``choices`` and ``metadata`` are preserved in the record for
+    scanners that can use them. ``files`` is stored under ``__files__`` for
+    future use by the view server.
 
     Returns a ``(records, fields)`` tuple — the ``FieldMap`` is pre-set so no
     auto-detection is needed. ``fields.group`` is set when the metadata has one obvious
@@ -353,6 +361,7 @@ def load_inspect_task(task_or_fn: Any, limit: int | None = None) -> tuple[list[R
         record: Record = {
             "input": _input_to_str(sample.input),
             "target": _target_to_str(sample.target),
+            "targets": _target_list(sample.target),
             "id": sample.id,
         }
         if sample.choices:

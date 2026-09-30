@@ -183,6 +183,10 @@ The names are `"answer"` (at least one row has a non-empty answer), `"image"` (a
 
 `scan_summary.json` records the `split` and `config` that were scanned. For a HuggingFace dataset these are filled in when not given: the only split, or `train` when there are several, and the only config or the dataset's default one. `split_defaulted` and `config_defaulted` say whether each was filled in (`true`) or given (`false`). Both are `null` for task and local scans. When the dataset has several splits and none is `train`, or several configs and no default, the scan stops and lists the choices.
 
+## inspect_ai tasks
+
+A task spec such as `inspect_evals/drop` loads the task's samples. Each record has `input` (the text of the last user message), `target` (the first target string), `targets` (every target string, as a list) and `id`, plus `choices` when the sample has them and every key of the sample's metadata. `input`, `target` and `id` are the question, answer and id fields. To measure every alternative answer of a list target, pass `--answer-field targets --answer-subfield '*'`.
+
 ## Integration with inspect-scout
 
 inspect-scout tracks which samples models consistently fail or succeed on. inspect-dataset provides a complementary static pass before running evals. A future release will accept inspect-scout results directly to produce eval-informed findings and a `clean_ids.txt` export for quality-adjusted benchmark scores.

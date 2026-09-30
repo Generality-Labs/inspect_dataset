@@ -13,6 +13,8 @@ from inspect_dataset.loader import (
     load_inspect_task,
     load_task_from_spec,
 )
+from inspect_dataset.scanners._answers import answer_texts
+from inspect_dataset.scanners.answer_length import answer_length
 
 # ---------------------------------------------------------------------------
 # Helpers — minimal stand-ins for inspect_ai objects
@@ -146,6 +148,41 @@ def test_list_target_uses_first():
     task = _make_task(_Sample("q", ["yes", "correct"]))
     records, _ = load_inspect_task(task)
     assert records[0]["target"] == "yes"
+
+
+def test_list_target_keeps_every_target():
+    task = _make_task(_Sample("q", ["yes", "correct"]))
+    records, _ = load_inspect_task(task)
+    assert records[0]["targets"] == ["yes", "correct"]
+
+
+def test_scalar_target_is_a_one_element_target_list():
+    task = _make_task(_Sample("q", "liver"))
+    records, _ = load_inspect_task(task)
+    assert records[0]["targets"] == ["liver"]
+
+
+def test_empty_list_target_has_no_targets():
+    task = _make_task(_Sample("q", []))
+    records, _ = load_inspect_task(task)
+    assert records[0]["target"] == ""
+    assert records[0]["targets"] == []
+
+
+def test_every_target_is_measured_through_the_star_subfield():
+    task = _make_task(
+        _Sample("q1", ["4", "four apples in a basket on the table"], id="a"),
+        _Sample("q2", "Paris", id="b"),
+    )
+    records, fields = load_inspect_task(task)
+    fields.answer = "targets"
+    fields.answer_subfield = "*"
+    assert answer_texts(records, fields, "answer_length") == [
+        ["4", "four apples in a basket on the table"],
+        ["Paris"],
+    ]
+    findings = answer_length.fn(records, fields)
+    assert [(f.sample_id, f.metadata["element_index"]) for f in findings] == [("a", 1)]
 
 
 def test_metadata_merged_into_record():
