@@ -8,6 +8,7 @@ from inspect_dataset._types import FieldMap
 from inspect_dataset.scanner import ScannerNotApplicable
 from inspect_dataset.scanners._answers import (
     VERBATIM_SCORERS,
+    choice_letters,
     record_choices,
     require_verbatim_scorer,
     resolve_choice,
@@ -67,6 +68,18 @@ def test_resolved_answer_maps_over_a_list_answer():
     fields = FieldMap(question="q", answer="targets", choices="choices")
     record = {"targets": ["A", "C"], "choices": CHOICES}
     assert resolved_answer(record, fields) == ["mri", "xray"]
+
+
+def test_choice_letters_marks_rows_whose_target_names_a_choice():
+    fields = FieldMap(question="q", answer="a", choices="choices")
+    records = [
+        {"a": "b", "choices": CHOICES},
+        {"a": "D", "choices": CHOICES},
+        {"a": "mri", "choices": CHOICES},
+        {"a": "A"},
+    ]
+    assert choice_letters(records, fields) == ["B", "", "", ""]
+    assert choice_letters(records, FieldMap(question="q", answer="a")) == ["", "", "", ""]
 
 
 # ---------------------------------------------------------------------------

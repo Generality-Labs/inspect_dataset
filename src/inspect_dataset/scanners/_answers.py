@@ -130,6 +130,9 @@ def subfield_metadata(fields: FieldMap, element_index: int) -> dict[str, Any]:
     return {"answer_subfield": fields.answer_subfield, "element_index": element_index}
 
 
+CHOICE_TEXT_NOTE = "measured as the choice text each target letter names"
+
+
 def resolve_choice(answer: Any, choices: Any) -> str | None:
     """The choice text a letter answer names ("A" is the first choice), or None.
 
@@ -168,6 +171,16 @@ def resolved_answer(record: Record, fields: FieldMap) -> Any:
     if isinstance(answer, list | tuple):
         return [_resolve_or_keep(a, choices) for a in answer]
     return _resolve_or_keep(answer, choices)
+
+
+def choice_letters(records: list[Record], fields: FieldMap) -> list[str]:
+    """Each row's target letter in upper case, or "" when it names none of the row's choices."""
+    letters = []
+    for record in records:
+        answer = record.get(fields.answer)
+        resolves = resolve_choice(answer, record_choices(record, fields)) is not None
+        letters.append(str(answer).strip().upper() if resolves else "")
+    return letters
 
 
 def _resolve_or_keep(answer: Any, choices: Sequence[Any]) -> Any:
