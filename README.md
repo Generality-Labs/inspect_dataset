@@ -122,6 +122,7 @@ uv run inspect-dataset view results/vqa-rad/ results/medqa/
 | `answer_distribution`   | high        | Datasets where a single answer accounts for ≥85% of samples — a model that always predicts that answer would score highly without any understanding. |
 | `forced_choice_leakage` | medium      | Questions offering explicit options via "or" where the answer is one of those options.                                                               |
 | `encoding_issues`       | low         | Questions or answers containing non-printable or control characters.                                                                                 |
+| `mojibake`              | low/medium  | UTF-8 text decoded with the wrong codec (Windows-1252, Latin-1, Mac Roman), such as `‚Äì` for `–`. Checks choices too and gives the repair.          |
 | `binary_question_ratio` | low         | Datasets where a high proportion of questions are binary (yes/no).                                                                                   |
 | `markdown_integrity`    | low/medium  | Structural problems in Markdown answers: table column-count mismatches, missing delimiter rows, heading jumps, empty image links.                    |
 | `extraction_artifacts`  | low/medium  | Characters betraying un-cleaned PDF/OCR extraction: ligatures, soft hyphens, zero-width characters, U+FFFD.                                          |

@@ -18,6 +18,7 @@ from inspect_dataset.scanners.label_correctness import (
     _make_scanner as _make_label_correctness,
 )
 from inspect_dataset.scanners.markdown_integrity import markdown_integrity
+from inspect_dataset.scanners.mojibake import mojibake
 from inspect_dataset.scanners.numeric_provenance import numeric_provenance
 from inspect_dataset.scanners.text_layer_recall import text_layer_recall
 
@@ -28,6 +29,7 @@ BUILTIN_SCANNERS: list[ScannerDef] = [
     answer_distribution,
     forced_choice_leakage,
     encoding_issues,
+    mojibake,
     binary_question_ratio,
     image_mime_type,
     markdown_integrity,
