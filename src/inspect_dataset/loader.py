@@ -374,8 +374,22 @@ def load_inspect_task(task_or_fn: Any, limit: int | None = None) -> tuple[list[R
         answer="target",
         id="id",
         group=detect_group_field(records, metadata_keys),
+        scorers=_scorer_names(task),
     )
     return records, fields
+
+
+def _scorer_names(task: Any) -> list[str]:
+    """Return the registry names of a task's scorers, skipping unregistered callables."""
+    scorer = getattr(task, "scorer", None)
+    if scorer is None:
+        return []
+    scorers = scorer if isinstance(scorer, list | tuple) else [scorer]
+    try:
+        from inspect_ai._util.registry import is_registry_object, registry_info
+    except ImportError:
+        return []
+    return [registry_info(s).name for s in scorers if is_registry_object(s)]
 
 
 def _find_task_in_module(module: Any, hint: str) -> Any:

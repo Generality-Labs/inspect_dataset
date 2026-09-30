@@ -309,9 +309,9 @@ def scan(
         records, fields = load_task_from_spec(dataset, limit=limit)
         # Allow field overrides even on the task path
         if question_field or answer_field or id_field:
-            detected_group = fields.group
+            detected_group, task_scorers = fields.group, fields.scorers
             fields = resolve_fields(records, question_field, answer_field, id_field, image_field)
-            fields.group = detected_group
+            fields.group, fields.scorers = detected_group, task_scorers
     else:
         from datasets.exceptions import DatasetNotFoundError
 
@@ -387,6 +387,7 @@ def scan(
 
     source_type = "local" if is_local else ("inspect_task" if is_task else "hf")
     resolved_config = config if source_type == "hf" else None
+    task_spec = dataset if is_task else None
 
     if llm_scanners:
         import asyncio
@@ -402,6 +403,7 @@ def scan(
                 revision=revision,
                 config=resolved_config,
                 group_by_source=group_by_source,
+                task=task_spec,
             )
         )
     else:
@@ -415,6 +417,7 @@ def scan(
             revision=revision,
             config=resolved_config,
             group_by_source=group_by_source,
+            task=task_spec,
         )
 
     run.split_defaulted = split_defaulted

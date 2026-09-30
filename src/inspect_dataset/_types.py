@@ -13,10 +13,11 @@ Record = dict[str, Any]
 class FieldMap:
     """Resolved mapping from logical field roles to dataset column names.
 
-    Besides the column roles, it carries dataset-level context that scanners may use.
-    ``group`` names the record field whose value is each sample's subset. The population
-    scanners (``inconsistent_format``, ``answer_distribution``, ``binary_question_ratio``)
-    compute their statistics per group when it is set.
+    Besides the column roles, it carries dataset-level context that scanners may use, such as
+    the scorers of the inspect_ai task the records came from. ``group`` names the record field
+    whose value is each sample's subset. The population scanners (``inconsistent_format``,
+    ``answer_distribution``, ``binary_question_ratio``) compute their statistics per group
+    when it is set.
     """
 
     question: str
@@ -26,6 +27,8 @@ class FieldMap:
     # Dotted path to the scalar inside a non-scalar answer column, for the answer-text scanners.
     answer_subfield: str | None = None
     group: str | None = None
+    # Registry names of the task's scorers (e.g. "inspect_ai/choice"). None outside task mode.
+    scorers: list[str] | None = None
 
 
 @dataclass
@@ -67,6 +70,8 @@ class ScanRun:
     group_by_source: str | None = None  # how group_by was chosen: "option" | "auto" | None
     # scanner name → {"status": "ran"} or {"status": "not_applicable", "reason": ...}
     scanner_status: dict[str, dict[str, str]] = field(default_factory=dict)
+    task: str | None = None  # task spec as given on the command line (task mode)
+    scorers: list[str] | None = None  # the task's scorer registry names (task mode)
     # HF mode: whether split/config were filled in rather than given. None for other sources.
     split_defaulted: bool | None = None
     config_defaulted: bool | None = None

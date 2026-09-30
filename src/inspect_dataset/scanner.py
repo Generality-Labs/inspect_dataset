@@ -155,6 +155,7 @@ def run_scanners(
     revision: str | None = None,
     config: str | None = None,
     group_by_source: str | None = None,
+    task: str | None = None,
 ) -> ScanRun:
     """Run scanners synchronously. Raises if any LLM scanners are included.
 
@@ -162,6 +163,8 @@ def run_scanners(
     was chosen (``"option"`` or ``"auto"``) and is dropped when there is no group. It is
     not inferred: ``fields`` from ``load_inspect_task`` may already carry a detected
     group, and the run then records ``group_by_source=None`` unless the caller passes it.
+
+    The run records ``fields.scorers``, the scorers the scanners saw.
     """
     llm = [s for s in scanners if isinstance(s, LLMScannerDef)]
     if llm:
@@ -200,6 +203,8 @@ def run_scanners(
         group_by=fields.group,
         group_by_source=group_by_source if fields.group is not None else None,
         scanner_status=status,
+        task=task,
+        scorers=fields.scorers,
     )
 
 
@@ -213,6 +218,7 @@ async def run_scanners_async(
     revision: str | None = None,
     config: str | None = None,
     group_by_source: str | None = None,
+    task: str | None = None,
 ) -> ScanRun:
     """Run scanners, supporting both sync and async (LLM) scanners."""
     # Run sync scanners first
@@ -227,6 +233,7 @@ async def run_scanners_async(
         revision=revision,
         config=config,
         group_by_source=group_by_source,
+        task=task,
     )
 
     # Run async (LLM) scanners concurrently
