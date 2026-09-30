@@ -2,13 +2,18 @@ from __future__ import annotations
 
 from inspect_dataset._types import FieldMap, Finding, Record
 from inspect_dataset.scanner import ScannerDef, get_sample_id
-from inspect_dataset.scanners._answers import answer_texts, subfield_metadata
+from inspect_dataset.scanners._answers import (
+    answer_texts,
+    require_verbatim_scorer,
+    subfield_metadata,
+)
 
 DEFAULT_MAX_WORDS = 4
 
 
 def _make_scanner(max_words: int = DEFAULT_MAX_WORDS) -> ScannerDef:
     def _scan(records: list[Record], fields: FieldMap) -> list[Finding]:
+        require_verbatim_scorer(fields, "answer_length")
         findings = []
         texts = answer_texts(records, fields, "answer_length")
         for i, (record, elements) in enumerate(zip(records, texts, strict=True)):
@@ -46,6 +51,7 @@ def _make_scanner(max_words: int = DEFAULT_MAX_WORDS) -> ScannerDef:
         description=(
             f"Flag answers longer than {max_words} words. "
             "Long answers are a weak proxy for exact-match scoring. "
+            "Does not apply in task mode unless a scorer compares answer text verbatim. "
             "Does not apply to list or struct answers unless --answer-subfield selects a scalar."
         ),
     )

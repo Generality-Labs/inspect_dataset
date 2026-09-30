@@ -148,3 +148,30 @@ def test_subfield_matching_no_row_is_not_applicable():
     fields = FieldMap(question="q", answer="a", answer_subfield="valeu")
     with pytest.raises(ScannerNotApplicable, match="'valeu' matched no value"):
         answer_length([{"q": "q", "a": {"value": "a b c d e"}}], fields)
+
+
+# ---------------------------------------------------------------------------
+# The task's scorer (issue #33)
+# ---------------------------------------------------------------------------
+
+
+def test_non_verbatim_scorer_is_not_applicable():
+    fields = FieldMap(question="q", answer="a", scorers=["inspect_ai/choice"])
+    recs = records("one two three four five six", "Yes", "yes", "yes", "yes.")
+    with pytest.raises(ScannerNotApplicable, match="this task scores with inspect_ai/choice"):
+        answer_length(recs, fields)
+
+
+def test_scorer_gate_comes_before_the_answer_type_check():
+    fields = FieldMap(question="q", answer="a", scorers=["inspect_ai/f1"])
+    recs = [{"q": "q", "a": ["a list", "of answers"]}]
+    with pytest.raises(ScannerNotApplicable, match="scores with inspect_ai/f1"):
+        answer_length(recs, fields)
+
+
+def test_verbatim_scorer_measures_as_before():
+    fields = FieldMap(question="q", answer="a", scorers=["inspect_ai/exact", "inspect_ai/f1"])
+    recs = records("one two three four five six", "yes", "no", "blue", "red", "green", "Big")
+    findings = answer_length(recs, fields)
+    assert findings
+    assert findings == answer_length(recs, FIELDS)

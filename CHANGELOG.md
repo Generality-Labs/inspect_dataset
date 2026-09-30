@@ -39,6 +39,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Local scans apply `--image-field` on its own. It used to be ignored unless `--question-field`, `--answer-field` or `--id-field` was also given ([#34](https://github.com/Generality-Labs/inspect_dataset/issues/34)).
 - `samples.json` shows list and struct questions and answers as indented JSON rather than a Python repr, so the viewer shows them readably. Image bytes inside them appear as a byte count. Both fields are still strings ([#37](https://github.com/Generality-Labs/inspect_dataset/issues/37)).
 - In task mode, `--question-field`, `--answer-field`, `--id-field` and `--image-field` now change only the roles they name, and the task's choices, images and scorers stay on the field map. Before, one override made the other roles auto-detected from the record columns, so a metadata `question` column could replace `input`, and `--image-field` on its own was ignored ([#37](https://github.com/Generality-Labs/inspect_dataset/issues/37)).
+- In task mode, `answer_length` and `inconsistent_format` run only when the task scores with a scorer that compares answer text verbatim (`exact`, `match`, `includes` or `pattern`). Under other scorers they are recorded as not applicable with the scorer names as the reason. Before, they flagged 93% of HumanEval's solution code and 208 MATH answers checked by expression equivalence ([#33](https://github.com/Generality-Labs/inspect_dataset/issues/33)).
 
 ## [0.3.4] - 2026-04-04
 

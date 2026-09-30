@@ -189,6 +189,7 @@ def test_every_target_is_measured_through_the_star_subfield():
     records, fields = load_inspect_task(task)
     fields.answer = "targets"
     fields.answer_subfield = "*"
+    fields.scorers = ["inspect_ai/match"]  # the stand-in task has no scorer
     assert answer_texts(records, fields, "answer_length") == [
         ["4", "four apples in a basket on the table"],
         ["Paris"],

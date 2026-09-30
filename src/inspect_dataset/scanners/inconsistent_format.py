@@ -5,7 +5,11 @@ from typing import Any
 
 from inspect_dataset._types import FieldMap, Finding, Record
 from inspect_dataset.scanner import ScannerDef, get_sample_id
-from inspect_dataset.scanners._answers import answer_texts, subfield_metadata
+from inspect_dataset.scanners._answers import (
+    answer_texts,
+    require_verbatim_scorer,
+    subfield_metadata,
+)
 from inspect_dataset.scanners._groups import group_label, group_metadata, group_rows
 
 # Fraction of the dataset that must share a property before deviations are flagged.
@@ -15,6 +19,7 @@ _LENGTH_STDEV_MULTIPLIER = 3.0  # flag if word count > mean + N * stdev
 
 
 def _scan(records: list[Record], fields: FieldMap) -> list[Finding]:
+    require_verbatim_scorer(fields, "inconsistent_format")
     texts = answer_texts(records, fields, "inconsistent_format")
     findings: list[Finding] = []
     for group, rows in group_rows(records, fields, "inconsistent_format"):
@@ -151,7 +156,8 @@ inconsistent_format = ScannerDef(
     description=(
         "Flag answers whose capitalisation, punctuation, or length deviate "
         "significantly from the dataset majority, or from each group's majority when "
-        "grouping is on. Does not apply to list or struct answers "
+        "grouping is on. Does not apply in task mode unless a scorer compares answer text "
+        "verbatim. Does not apply to list or struct answers "
         "unless --answer-subfield selects a scalar."
     ),
 )
