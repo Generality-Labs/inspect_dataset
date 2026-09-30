@@ -102,9 +102,27 @@ def test_dotted_name_is_hf():
     assert not is_task_spec("openai/data.v2")
 
 
+class _EntryPoint:
+    def __init__(self, name: str) -> None:
+        self.name = name
+
+
 def test_registry_unavailable_is_hf(fake_packages: Path, monkeypatch):
     pkg = fake_packages / "ids_owner_d"
     pkg.mkdir()
     (pkg / "__init__.py").write_text("")
+    monkeypatch.setattr(
+        "importlib.metadata.entry_points", lambda group: [_EntryPoint("ids_owner_d")]
+    )
     monkeypatch.setitem(sys.modules, "inspect_ai._util.registry", None)
     assert not is_task_spec("ids_owner_d/boolq")
+
+
+def test_registry_not_imported_without_owner_entry_point(fake_packages: Path, monkeypatch):
+    pkg = fake_packages / "ids_owner_e"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("")
+    monkeypatch.setattr("importlib.metadata.entry_points", lambda group: [_EntryPoint("other")])
+    monkeypatch.delitem(sys.modules, "inspect_ai._util.registry")
+    assert not is_task_spec("ids_owner_e/boolq")
+    assert "inspect_ai._util.registry" not in sys.modules

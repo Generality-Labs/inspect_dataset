@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import importlib
+import importlib.metadata
 import importlib.util
 import json
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -401,11 +403,18 @@ def _module_exists(name: str) -> bool:
 
 
 def _registry_has_task(name: str) -> bool:
+    # registry_lookup can only find owner/x if something has already populated
+    # the registry or an inspect_ai entry point is named owner. Checking that
+    # first avoids importing inspect_ai for HuggingFace slugs.
+    owner = name.split("/", 1)[0]
+    if sys.modules.get("inspect_ai._util.registry") is None and not any(
+        ep.name == owner for ep in importlib.metadata.entry_points(group="inspect_ai")
+    ):
+        return False
     try:
         from inspect_ai._util.registry import registry_lookup
     except ImportError:
         return False
-    # Only loads the entry points registered under the owner's package name.
     return registry_lookup("task", name) is not None
 
 
