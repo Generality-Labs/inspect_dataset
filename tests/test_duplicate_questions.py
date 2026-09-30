@@ -109,6 +109,16 @@ def test_mixed_exact_and_reuse_findings():
     assert [(f.severity, f.metadata["duplicate_indices"]) for f in reuse] == [("low", [0, 1, 2])]
 
 
+def test_exact_duplicate_records_whether_answers_agree():
+    same = [img_rec("is this normal?", "no", IMG1), img_rec("is this normal?", "no", IMG1)]
+    conflict = [img_rec("is this normal?", "no", IMG1), img_rec("is this normal?", "yes", IMG1)]
+    [agreeing] = duplicate_questions(same, IMG_FIELDS)
+    [conflicting] = duplicate_questions(conflict, IMG_FIELDS)
+    assert agreeing.metadata["duplicate_type"] == conflicting.metadata["duplicate_type"] == "exact"
+    assert agreeing.metadata["answers_agree"] is True
+    assert conflicting.metadata["answers_agree"] is False
+
+
 def test_no_duplicates_with_image_no_findings():
     data = [
         img_rec("is this normal?", "yes", IMG1),
