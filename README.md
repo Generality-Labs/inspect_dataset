@@ -20,6 +20,9 @@ uv add inspect-dataset
 # Scan a HuggingFace dataset
 inspect-dataset scan flaviagiammarino/vqa-rad --split test -o findings/
 
+# Pick a config and split (needed when the dataset has several configs, or several splits and none is "train")
+inspect-dataset scan allenai/ai2_arc --config ARC-Challenge --split test -o findings/
+
 # Pin to a specific revision
 inspect-dataset scan flaviagiammarino/vqa-rad --revision abc123 -o findings/
 
@@ -119,6 +122,7 @@ uv run inspect-dataset view results/vqa-rad/ results/medqa/
 | `answer_distribution`   | high        | Datasets where a single answer accounts for ≥85% of samples — a model that always predicts that answer would score highly without any understanding. |
 | `forced_choice_leakage` | medium      | Questions offering explicit options via "or" where the answer is one of those options.                                                               |
 | `encoding_issues`       | low         | Questions or answers containing non-printable or control characters.                                                                                 |
+| `mojibake`              | low/medium  | UTF-8 text decoded with the wrong codec (Windows-1252, Latin-1, Mac Roman), such as `‚Äì` for `–`. Checks choices too and gives the repair.          |
 | `binary_question_ratio` | low         | Datasets where a high proportion of questions are binary (yes/no).                                                                                   |
 | `markdown_integrity`    | low/medium  | Structural problems in Markdown answers: table column-count mismatches, missing delimiter rows, heading jumps, empty image links.                    |
 | `extraction_artifacts`  | low/medium  | Characters betraying un-cleaned PDF/OCR extraction: ligatures, soft hyphens, zero-width characters, U+FFFD.                                          |
@@ -148,6 +152,8 @@ findings/
 ```
 
 Each finding includes the scanner name, severity, category, explanation, sample index, sample ID (if available), and scanner-specific metadata.
+
+`scan_summary.json` records the `split` and `config` that were scanned. For a HuggingFace dataset these are filled in when not given: the only split, or `train` when there are several, and the only config or the dataset's default one. `split_defaulted` and `config_defaulted` say whether each was filled in (`true`) or given (`false`). Both are `null` for task and local scans. When the dataset has several splits and none is `train`, or several configs and no default, the scan stops and lists the choices.
 
 ## Integration with inspect-scout
 
