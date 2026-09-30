@@ -37,10 +37,27 @@ def _extract_or_options(question: str) -> list[str]:
     return options
 
 
+_ARTICLES = frozenset({"a", "an", "the"})
+_WORD = re.compile(r"[^\W_]+(?:['\u2019.-][^\W_]+)*")
+
+
+def _tokens(text: str) -> list[str]:
+    """Lowercase word tokens with articles dropped, so punctuation and case do not matter."""
+    return [t for t in _WORD.findall(text.lower()) if t not in _ARTICLES]
+
+
 def _answer_matches_option(answer: str, options: list[str]) -> bool:
-    """Return True if the answer is contained in or matches one of the options."""
-    a = answer.lower().strip()
-    return any(a == opt or opt.endswith(a) or a.endswith(opt) for opt in options)
+    """Return True if the answer equals an option or is its head at a token boundary."""
+    a = _tokens(answer)
+    if not a:
+        return False
+    for option in options:
+        o = _tokens(option)
+        if len(a) <= len(o) and o[-len(a) :] == a:
+            return True
+        if len(o) <= len(a) and o and a[-len(o) :] == o:
+            return True
+    return False
 
 
 def _scan(records: list[Record], fields: FieldMap) -> list[Finding]:

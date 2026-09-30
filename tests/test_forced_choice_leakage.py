@@ -64,3 +64,28 @@ def test_metadata_contains_options():
     findings = forced_choice_leakage(rec("is this an mri or a ct scan?", "mri"), FIELDS)
     assert "options" in findings[0].metadata
     assert len(findings[0].metadata["options"]) >= 2
+
+
+def test_empty_answer_skipped():
+    prompt = '"Which is your preferred political party: Democrats or Republicans?"'
+    assert forced_choice_leakage(rec(prompt, ""), FIELDS) == []
+    assert forced_choice_leakage(rec(prompt, "  "), FIELDS) == []
+
+
+def test_single_letter_answer_does_not_match_word_ending():
+    assert forced_choice_leakage(rec("Is the cell prokaryotic or eukaryotic?", "C"), FIELDS) == []
+    assert forced_choice_leakage(rec("Was the soldier wounded or killed?", "D"), FIELDS) == []
+
+
+def test_mid_word_suffix_not_matched():
+    assert (
+        forced_choice_leakage(rec("Is this hypertension or hypotension?", "tension"), FIELDS) == []
+    )
+    assert (
+        forced_choice_leakage(rec("is x-ring chain or o-ring chain better?", "ring chain"), FIELDS)
+        == []
+    )
+
+
+def test_answer_with_article_and_punctuation_matches():
+    assert len(forced_choice_leakage(rec("is this a ct or an mri?", "an MRI."), FIELDS)) == 1
