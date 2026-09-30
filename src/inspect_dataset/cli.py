@@ -105,6 +105,16 @@ def cli() -> None:
     help="Column name for answers (auto-detected if omitted).",
 )
 @click.option(
+    "--answer-subfield",
+    default=None,
+    help=(
+        "Dotted path to the scalar inside a list or struct answer column, for answer_length "
+        "and inconsistent_format (e.g. 'sentence' for StereoSet's sentences column). Lists "
+        "along the path are measured element by element; '*' measures each element of a "
+        "list of strings. Without it those scanners report the column as not applicable."
+    ),
+)
+@click.option(
     "--id-field",
     default=None,
     help="Column name for sample IDs (auto-detected if omitted).",
@@ -180,6 +190,7 @@ def scan(
     config: str | None,
     question_field: str | None,
     answer_field: str | None,
+    answer_subfield: str | None,
     id_field: str | None,
     image_field: str | None,
     scanners: str | None,
@@ -296,6 +307,9 @@ def scan(
         )
         fields = resolve_fields(records, question_field, answer_field, id_field, image_field)
 
+    if answer_subfield is not None:
+        fields.answer_subfield = answer_subfield
+
     if files_root is not None:
         from inspect_dataset.scanner import get_sample_id as _gsid
 
@@ -314,6 +328,7 @@ def scan(
     console.print(
         f"  Fields: question=[bold]{fields.question}[/bold]  "
         f"answer=[bold]{fields.answer}[/bold]"
+        + (f".[bold]{fields.answer_subfield}[/bold]" if fields.answer_subfield else "")
         + (f"  id=[bold]{fields.id}[/bold]" if fields.id else "")
     )
 

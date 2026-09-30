@@ -39,6 +39,10 @@ inspect-dataset scan flaviagiammarino/vqa-rad \
 # Adjust answer length threshold (default: 4 words)
 inspect-dataset scan flaviagiammarino/vqa-rad --max-answer-words 6
 
+# Measure a scalar inside a struct answer column (here, each of StereoSet's candidate sentences)
+inspect-dataset scan McGill-NLP/stereoset --config intersentence --split validation \
+  --question-field context --answer-field sentences --answer-subfield sentence
+
 # Limit samples loaded
 inspect-dataset scan flaviagiammarino/vqa-rad --limit 500
 
@@ -152,6 +156,8 @@ findings/
 ```
 
 Each finding includes the scanner name, severity, category, explanation, sample index, sample ID (if available), and scanner-specific metadata.
+
+`scan_summary.json` also has a `scanner_status` map with one entry per scanner that was run. A scanner that checked the dataset has `{"status": "ran"}`, whether or not it found anything. A scanner whose check does not fit the dataset has `{"status": "not_applicable", "reason": "..."}` and emits no findings. For example, `answer_length` and `inconsistent_format` measure answer text, so they do not apply to a list or struct answer column unless `--answer-subfield` selects a scalar inside it. The path is dotted, lists along it are measured element by element, and `*` measures each element of a list of strings. Plugin scanners can report the same status by raising `inspect_dataset.ScannerNotApplicable(reason)`.
 
 `scan_summary.json` records the `split` and `config` that were scanned. For a HuggingFace dataset these are filled in when not given: the only split, or `train` when there are several, and the only config or the dataset's default one. `split_defaulted` and `config_defaulted` say whether each was filled in (`true`) or given (`false`). Both are `null` for task and local scans. When the dataset has several splits and none is `train`, or several configs and no default, the scan stops and lists the choices.
 

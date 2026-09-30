@@ -10,6 +10,18 @@ DatasetScanner = Callable[[list[Record], FieldMap], list[Finding]]
 AsyncDatasetScanner = Callable[[list[Record], FieldMap], Coroutine[Any, Any, list[Finding]]]
 
 
+class ScannerNotApplicable(Exception):  # noqa: N818 -- a status, not an error
+    """Raised by a scanner whose check does not apply to this dataset.
+
+    The runner records the scanner as ``not_applicable`` with ``reason`` in
+    ``ScanRun.scanner_status``, instead of recording zero findings.
+    """
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(reason)
+        self.reason = reason
+
+
 class ScannerDef:
     """A named scanner with metadata."""
 
@@ -83,9 +95,16 @@ def run_scanners(
             "Use run_scanners_async() instead."
         )
     all_findings: list[Finding] = []
+    status: dict[str, dict[str, str]] = {}
     for scanner in scanners:
         assert isinstance(scanner, ScannerDef)
-        findings = scanner(records, fields)
+        try:
+            findings = scanner(records, fields)
+        except ScannerNotApplicable as e:
+            findings = []
+            status[scanner.name] = {"status": "not_applicable", "reason": e.reason}
+        else:
+            status[scanner.name] = {"status": "ran"}
         # Ensure scanner name is stamped on every finding
         for f in findings:
             f.scanner = scanner.name
@@ -98,6 +117,7 @@ def run_scanners(
         source_type=source_type,
         revision=revision,
         config=config,
+        scanner_status=status,
     )
 
 
@@ -112,35 +132,43 @@ async def run_scanners_async(
     config: str | None = None,
 ) -> ScanRun:
     """Run scanners, supporting both sync and async (LLM) scanners."""
-    all_findings: list[Finding] = []
-
     # Run sync scanners first
     sync_scanners = [s for s in scanners if isinstance(s, ScannerDef)]
-    for scanner in sync_scanners:
-        findings = scanner(records, fields)
-        for f in findings:
-            f.scanner = scanner.name
-        all_findings.extend(findings)
-
-    # Run async (LLM) scanners concurrently
-    async_scanners = [s for s in scanners if isinstance(s, LLMScannerDef)]
-    if async_scanners:
-        tasks = [s(records, fields) for s in async_scanners]
-        results = await asyncio.gather(*tasks)
-        for llm_scanner, findings in zip(async_scanners, results, strict=True):
-            for f in findings:
-                f.scanner = llm_scanner.name
-            all_findings.extend(findings)
-
-    return ScanRun(
+    run = run_scanners(
+        records,
+        fields,
+        list(sync_scanners),
         dataset_name=dataset_name,
         split=split,
-        total_samples=len(records),
-        findings=all_findings,
         source_type=source_type,
         revision=revision,
         config=config,
     )
+
+    # Run async (LLM) scanners concurrently
+    async_scanners = [s for s in scanners if isinstance(s, LLMScannerDef)]
+    if async_scanners:
+
+        async def _guarded(scanner: LLMScannerDef) -> list[Finding] | ScannerNotApplicable:
+            try:
+                return await scanner(records, fields)
+            except ScannerNotApplicable as e:
+                return e
+
+        results = await asyncio.gather(*(_guarded(s) for s in async_scanners))
+        for llm_scanner, result in zip(async_scanners, results, strict=True):
+            if isinstance(result, ScannerNotApplicable):
+                run.scanner_status[llm_scanner.name] = {
+                    "status": "not_applicable",
+                    "reason": result.reason,
+                }
+                continue
+            run.scanner_status[llm_scanner.name] = {"status": "ran"}
+            for f in result:
+                f.scanner = llm_scanner.name
+            run.findings.extend(result)
+
+    return run
 
 
 def get_field_value(record: Record, field_name: str) -> Any:

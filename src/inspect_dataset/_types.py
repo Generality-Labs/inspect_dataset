@@ -17,6 +17,8 @@ class FieldMap:
     answer: str
     id: str | None = None
     image: str | None = None
+    # Dotted path to the scalar inside a non-scalar answer column, for the answer-text scanners.
+    answer_subfield: str | None = None
 
 
 @dataclass
@@ -54,6 +56,8 @@ class ScanRun:
     source_type: str = "hf"  # "hf" | "inspect_task"
     revision: str | None = None  # HF revision / commit SHA
     config: str | None = None  # HF config/subset name (multi-config datasets)
+    # scanner name → {"status": "ran"} or {"status": "not_applicable", "reason": ...}
+    scanner_status: dict[str, dict[str, str]] = field(default_factory=dict)
     # HF mode: whether split/config were filled in rather than given. None for other sources.
     split_defaulted: bool | None = None
     config_defaulted: bool | None = None

@@ -6,12 +6,21 @@ from typing import Any
 
 from rich import box
 from rich.console import Console
+from rich.markup import escape
 from rich.table import Table
 
 from inspect_dataset._types import FieldMap, Record, ScanRun
 
 _SEVERITY_COLOUR = {"high": "red", "medium": "yellow", "low": "cyan"}
 _SEVERITY_ORDER = {"high": 0, "medium": 1, "low": 2}
+
+
+def _not_applicable(run: ScanRun) -> list[tuple[str, str]]:
+    return sorted(
+        (name, status.get("reason", ""))
+        for name, status in run.scanner_status.items()
+        if status.get("status") == "not_applicable"
+    )
 
 
 def print_report(run: ScanRun, console: Console | None = None) -> None:
@@ -27,6 +36,8 @@ def print_report(run: ScanRun, console: Console | None = None) -> None:
     )
     console.print(f"  Samples: {run.total_samples:,}")
     console.print(f"  Total findings: {len(run.findings):,}")
+    for name, reason in _not_applicable(run):
+        console.print(f"  [dim]Not applicable: {escape(name)} ({escape(reason)})[/dim]")
     console.print()
 
     if not run.findings:
@@ -112,6 +123,7 @@ def save_findings(
             for name, findings in by_scanner.items()
         },
         "by_severity": {sev: len(findings) for sev, findings in run.by_severity().items()},
+        "scanner_status": run.scanner_status,
     }
     (output_dir / "scan_summary.json").write_text(json.dumps(summary, indent=2))
 
@@ -152,6 +164,11 @@ def _write_markdown_report(run: ScanRun, path: Path) -> None:
         med = sum(1 for f in findings if f.severity == "medium")
         low = sum(1 for f in findings if f.severity == "low")
         lines.append(f"| `{name}` | {len(findings)} | {high} | {med} | {low} |")
+
+    not_applicable = _not_applicable(run)
+    if not_applicable:
+        lines += ["", "## Not applicable", ""]
+        lines += [f"- `{name}`: {reason}" for name, reason in not_applicable]
 
     lines += ["", "## Findings", ""]
 

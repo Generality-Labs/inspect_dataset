@@ -4,6 +4,7 @@ import statistics
 
 from inspect_dataset._types import FieldMap, Finding, Record
 from inspect_dataset.scanner import ScannerDef, get_sample_id
+from inspect_dataset.scanners._answers import answer_texts, subfield_metadata
 
 # Fraction of the dataset that must share a property before deviations are flagged.
 # E.g. if 80%+ of answers are lowercase, uppercase outliers are flagged.
@@ -12,8 +13,13 @@ _LENGTH_STDEV_MULTIPLIER = 3.0  # flag if word count > mean + N * stdev
 
 
 def _scan(records: list[Record], fields: FieldMap) -> list[Finding]:
-    answers = [str(record.get(fields.answer, "") or "").strip() for record in records]
-    non_empty = [a for a in answers if a]
+    # (row index, element index, text): one per row, or one per element under a subfield
+    units = [
+        (i, j, text)
+        for i, row in enumerate(answer_texts(records, fields, "inconsistent_format"))
+        for j, text in enumerate(row)
+    ]
+    non_empty = [a for _, _, a in units if a]
     if len(non_empty) < 2:
         return []
 
@@ -27,7 +33,7 @@ def _scan(records: list[Record], fields: FieldMap) -> list[Finding]:
     mostly_lower = lower_count / total >= _MAJORITY_THRESHOLD
     mostly_upper_first = upper_first_count / total >= _MAJORITY_THRESHOLD
 
-    for i, (record, answer) in enumerate(zip(records, answers, strict=True)):
+    for i, j, answer in units:
         if not answer:
             continue
         issues = []
@@ -45,8 +51,12 @@ def _scan(records: list[Record], fields: FieldMap) -> list[Finding]:
                     explanation="Capitalisation differs from dataset majority. "
                     + "; ".join(issues),
                     sample_index=i,
-                    sample_id=get_sample_id(record, fields, i),
-                    metadata={"answer": answer, "issue": "capitalisation"},
+                    sample_id=get_sample_id(records[i], fields, i),
+                    metadata={
+                        "answer": answer,
+                        "issue": "capitalisation",
+                        **subfield_metadata(fields, j),
+                    },
                 )
             )
 
@@ -56,7 +66,7 @@ def _scan(records: list[Record], fields: FieldMap) -> list[Finding]:
     mostly_punct = punct_count / total >= _MAJORITY_THRESHOLD
     mostly_no_punct = (total - punct_count) / total >= _MAJORITY_THRESHOLD
 
-    for i, (record, answer) in enumerate(zip(records, answers, strict=True)):
+    for i, j, answer in units:
         if not answer:
             continue
         has_p = answer[-1] in ".!?" and not answer.endswith("etc.")
@@ -74,8 +84,12 @@ def _scan(records: list[Record], fields: FieldMap) -> list[Finding]:
                     category="format",
                     explanation=f"Trailing punctuation differs from dataset majority. {issue}",
                     sample_index=i,
-                    sample_id=get_sample_id(record, fields, i),
-                    metadata={"answer": answer, "issue": "trailing_punctuation"},
+                    sample_id=get_sample_id(records[i], fields, i),
+                    metadata={
+                        "answer": answer,
+                        "issue": "trailing_punctuation",
+                        **subfield_metadata(fields, j),
+                    },
                 )
             )
 
@@ -85,7 +99,7 @@ def _scan(records: list[Record], fields: FieldMap) -> list[Finding]:
     if len(word_counts) >= 2:
         stdev_wc = statistics.stdev(word_counts)
         threshold = mean_wc + _LENGTH_STDEV_MULTIPLIER * stdev_wc
-        for i, (record, answer) in enumerate(zip(records, answers, strict=True)):
+        for i, j, answer in units:
             if not answer:
                 continue
             wc = len(answer.split())
@@ -101,12 +115,13 @@ def _scan(records: list[Record], fields: FieldMap) -> list[Finding]:
                             f"threshold={threshold:.1f}). Answer: {answer!r}"
                         ),
                         sample_index=i,
-                        sample_id=get_sample_id(record, fields, i),
+                        sample_id=get_sample_id(records[i], fields, i),
                         metadata={
                             "answer": answer,
                             "word_count": wc,
                             "mean_word_count": round(mean_wc, 2),
                             "issue": "length_outlier",
+                            **subfield_metadata(fields, j),
                         },
                     )
                 )
@@ -119,6 +134,7 @@ inconsistent_format = ScannerDef(
     fn=_scan,
     description=(
         "Flag answers whose capitalisation, punctuation, or length deviate "
-        "significantly from the dataset majority."
+        "significantly from the dataset majority. Does not apply to list or struct answers "
+        "unless --answer-subfield selects a scalar."
     ),
 )
