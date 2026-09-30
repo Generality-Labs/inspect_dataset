@@ -14,6 +14,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `mojibake` scanner: flags UTF-8 text decoded with the wrong codec (Windows-1252, Latin-1 or Mac Roman) in questions, answers and each choice. It reports a span only when re-encoding it with that codec and decoding as UTF-8 gives ordinary text, and it records the repair. It finds 15 fields in CoCoNot and 12 in MMLU-Pro ([#39](https://github.com/Generality-Labs/inspect_dataset/issues/39)).
 - `split_defaulted` and `config_defaulted` in `scan_summary.json`. In HF mode they say whether the split and config were given or filled in. They are `null` for task and local scans ([#32](https://github.com/Generality-Labs/inspect_dataset/issues/32)).
 - `inspect_dataset.loader.resolve_hf_split_config`, which fills in a missing split and config for a HF dataset ([#32](https://github.com/Generality-Labs/inspect_dataset/issues/32)).
+- `latex_escapes` scanner for LaTeX commands whose backslash was eaten by a Python string escape. The typical case is `\frac` stored as a form feed followed by `rac`, which AIME 2024 has in two problems. It looks only inside math, checks the question, the answer and each choice, and reports the likely repair ([#38](https://github.com/Generality-Labs/inspect_dataset/issues/38)).
 
 ### Changed
 
