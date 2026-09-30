@@ -132,6 +132,7 @@ def _scan(records: list[Record], fields: FieldMap) -> list[Finding]:
 inconsistent_format = ScannerDef(
     name="inconsistent_format",
     fn=_scan,
+    requires="answer",
     description=(
         "Flag answers whose capitalisation, punctuation, or length deviate "
         "significantly from the dataset majority. Does not apply to list or struct answers "

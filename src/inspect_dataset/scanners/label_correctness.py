@@ -81,6 +81,7 @@ def _make_scanner(model_name: str, concurrency: int = 20) -> LLMScannerDef:
     return LLMScannerDef(
         name="label_correctness",
         fn=_scan,
+        requires="answer",
         description=(
             "LLM-based scanner that flags samples where the ground-truth "
             "answer appears to be incorrect — the most damaging dataset "

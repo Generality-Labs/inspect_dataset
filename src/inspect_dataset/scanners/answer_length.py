@@ -42,6 +42,7 @@ def _make_scanner(max_words: int = DEFAULT_MAX_WORDS) -> ScannerDef:
     return ScannerDef(
         name="answer_length",
         fn=_scan,
+        requires="answer",
         description=(
             f"Flag answers longer than {max_words} words. "
             "Long answers are a weak proxy for exact-match scoring. "

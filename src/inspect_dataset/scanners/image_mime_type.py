@@ -15,7 +15,7 @@ import base64
 from typing import Any
 
 from inspect_dataset._types import FieldMap, Finding, Record
-from inspect_dataset.scanner import ScannerDef, get_sample_id
+from inspect_dataset.scanner import ScannerDef, ScannerNotApplicable, get_sample_id
 
 # -- magic-byte signatures for common image formats -------------------------
 
@@ -120,12 +120,13 @@ def _get_declared_mime(img: Any) -> str | None:
 
 
 def _scan(records: list[Record], fields: FieldMap) -> list[Finding]:
-    if fields.image is None:
-        return []
-
+    image_field = fields.image
+    if image_field is None:
+        # The runner already skips this scanner via requires; this covers direct calls.
+        raise ScannerNotApplicable("no image field")
     findings: list[Finding] = []
     for i, record in enumerate(records):
-        img = record.get(fields.image)
+        img = record.get(image_field)
         if img is None:
             continue
 
@@ -168,6 +169,7 @@ def _scan(records: list[Record], fields: FieldMap) -> list[Finding]:
 image_mime_type = ScannerDef(
     name="image_mime_type",
     fn=_scan,
+    requires="image",
     description=(
         "Detect mismatches between declared image MIME type (from file extension "
         "or data URI header) and actual image data (from magic bytes). "

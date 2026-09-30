@@ -10,6 +10,7 @@ import pytest
 from inspect_dataset import LLMScannerDef, ScannerDef, dataset_scanner
 from inspect_dataset._types import FieldMap, Finding, Record
 from inspect_dataset.scanner import run_scanners, run_scanners_async
+from inspect_dataset.scanners import BUILTIN_SCANNER_NAMES, LLM_SCANNER_FACTORIES
 
 FIELDS = FieldMap(question="q", answer="a")
 NO_ANSWERS = "no non-empty answers in field 'a'"
@@ -207,3 +208,59 @@ def test_requires_defaults_to_empty():
 def test_unknown_requirement_is_rejected(make: Any):
     with pytest.raises(ValueError, match="unknown scanner requirement"):
         make()
+
+
+def _llm_requires(name: str) -> tuple[str, ...]:
+    return LLM_SCANNER_FACTORIES[name]("mockllm/model").requires
+
+
+@pytest.mark.parametrize(
+    ("name", "requires"),
+    [
+        ("answer_length", ("answer",)),
+        ("inconsistent_format", ("answer",)),
+        ("answer_distribution", ("answer",)),
+        ("binary_question_ratio", ("answer",)),
+        ("forced_choice_leakage", ("answer",)),
+        ("markdown_integrity", ("answer",)),
+        ("image_mime_type", ("image",)),
+        ("text_layer_recall", ("artifacts", "answer")),
+        ("numeric_provenance", ("artifacts", "answer")),
+        ("duplicate_questions", ()),
+        ("encoding_issues", ()),
+        ("extraction_artifacts", ()),
+    ],
+)
+def test_builtin_requirements(name: str, requires: tuple[str, ...]):
+    assert BUILTIN_SCANNER_NAMES[name].requires == requires
+
+
+@pytest.mark.parametrize("name", ["label_correctness", "answerability", "ambiguity"])
+def test_llm_builtins_require_answers(name: str):
+    assert _llm_requires(name) == ("answer",)
+
+
+def test_builtins_on_a_dataset_without_answers():
+    records = [
+        {"q": "Is it red or blue?", "a": ""},
+        {"q": "Write a poem or a story.", "a": ""},
+    ]
+    run = run_scanners(records, FIELDS, list(BUILTIN_SCANNER_NAMES.values()))
+    assert run.findings == []
+    status = {name: s["status"] for name, s in run.scanner_status.items()}
+    assert status == {
+        "answer_length": "not_applicable",
+        "duplicate_questions": "ran",
+        "inconsistent_format": "not_applicable",
+        "answer_distribution": "not_applicable",
+        "forced_choice_leakage": "not_applicable",
+        "encoding_issues": "ran",
+        "latex_escapes": "ran",
+        "mojibake": "ran",
+        "binary_question_ratio": "not_applicable",
+        "image_mime_type": "not_applicable",
+        "markdown_integrity": "not_applicable",
+        "extraction_artifacts": "ran",
+        "text_layer_recall": "not_applicable",
+        "numeric_provenance": "not_applicable",
+    }
