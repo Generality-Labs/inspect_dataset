@@ -124,7 +124,7 @@ uv run inspect-dataset view results/vqa-rad/ results/medqa/
 | Scanner                 | Severity    | What it flags                                                                                                                                        |
 | ----------------------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `answer_length`         | medium      | Answers longer than N words (default: 4). Long answers are unlikely to be reproduced verbatim by exact-match scorers.                                |
-| `duplicate_questions`   | high        | Samples that appear more than once, by question, choices and image content. One finding per group. Duplicates inflate sample counts.                 |
+| `duplicate_questions`   | low to high | Samples that appear more than once, by question, choices and image content. One finding per group. Duplicates inflate sample counts.                 |
 | `inconsistent_format`   | low/medium  | Capitalisation, punctuation, or length deviations from the dataset majority (80%+ threshold).                                                        |
 | `answer_distribution`   | high        | Datasets where a single answer accounts for ≥85% of samples — a model that always predicts that answer would score highly without any understanding. |
 | `forced_choice_leakage` | medium      | Question sentences offering explicit options via "or" where the answer is one of those options. Samples with listed choices are skipped.             |
