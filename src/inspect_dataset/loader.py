@@ -43,6 +43,85 @@ def auto_detect_fields(columns: list[str]) -> FieldMap:
     )
 
 
+class DatasetSelectionError(ValueError):
+    """A HuggingFace dataset needs a split or config that was not given.
+
+    ``option`` is ``"split"`` or ``"config"``; ``choices`` lists the values
+    the dataset offers.
+    """
+
+    def __init__(self, message: str, option: str, choices: list[str]) -> None:
+        super().__init__(message)
+        self.option = option
+        self.choices = choices
+
+
+def resolve_hf_split_config(
+    path: str,
+    split: str | None,
+    config: str | None,
+    revision: str | None = None,
+) -> tuple[str, str | None, bool, bool]:
+    """Fill in the split and config of a HuggingFace dataset when not given.
+
+    Returns ``(split, config, split_defaulted, config_defaulted)``.
+
+    - Config not given: use the dataset's only config or its default config.
+      Several configs and no default raise ``DatasetSelectionError``.
+    - Split not given: use the only split, else ``train`` if present. Several
+      splits without ``train`` raise ``DatasetSelectionError``.
+
+    One ``load_dataset_builder`` call answers both questions. It reads the
+    dataset card and file list, not the data, and works offline for cached
+    datasets. ``get_dataset_config_names`` is only called to list the configs
+    when the builder refuses to pick one.
+    """
+    split_defaulted = split is None
+    config_defaulted = config is None
+    if split is not None and config is not None:
+        return split, config, False, False
+
+    import datasets
+
+    try:
+        builder = datasets.load_dataset_builder(path, name=config, revision=revision)
+    except ValueError:
+        if config is not None:
+            raise
+        configs = datasets.get_dataset_config_names(path, revision=revision)
+        if len(configs) <= 1:
+            raise
+        raise DatasetSelectionError(
+            f"{path} has {len(configs)} configs and none is the default: {', '.join(configs)}.",
+            option="config",
+            choices=list(configs),
+        ) from None
+
+    config = builder.config.name
+    if split is None:
+        info_splits = builder.info.splits
+        splits = (
+            list(info_splits)
+            if info_splits
+            else datasets.get_dataset_split_names(path, config_name=config, revision=revision)
+        )
+        label = path if config_defaulted else f"{path} (config {config})"
+        if len(splits) == 1:
+            split = splits[0]
+        elif "train" in splits:
+            split = "train"
+        elif not splits:
+            raise DatasetSelectionError(f"{label} reports no splits.", option="split", choices=[])
+        else:
+            raise DatasetSelectionError(
+                f"{label} has {len(splits)} splits and none is named 'train': {', '.join(splits)}.",
+                option="split",
+                choices=splits,
+            )
+
+    return split, config, split_defaulted, config_defaulted
+
+
 def load_hf_dataset(
     path: str,
     split: str = "train",
