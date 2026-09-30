@@ -279,6 +279,8 @@ def scan(
         resolved_split = None
         if question_field or answer_field or id_field:
             fields = resolve_fields(records, question_field, answer_field, id_field, image_field)
+        elif image_field:
+            fields.image = image_field
     elif is_task:
         console.print(f"Loading inspect_ai task [bold]{dataset}[/bold]...")
         records, fields = load_task_from_spec(dataset, limit=limit)

@@ -276,3 +276,28 @@ def test_scanners_command_lists_requirements():
     lines = result.output.splitlines()
     assert "Requires" in next(line for line in lines if "Description" in line)
     assert "artifacts, answer" in next(line for line in lines if "text_layer_recall" in line)
+
+
+def test_local_scan_applies_image_field_on_its_own(tmp_path: Path):
+    import base64
+    import json
+
+    from click.testing import CliRunner
+
+    from inspect_dataset.cli import cli
+
+    data = tmp_path / "data"
+    data.mkdir()
+    jpeg = base64.b64encode(b"\xff\xd8\xff\xe0" + b"\x00" * 16).decode()
+    for i in range(2):
+        # Declared PNG, actually JPEG, so image_mime_type flags each sample once it runs.
+        sample = {"id": f"s{i}", "img": f"data:image/png;base64,{jpeg}"}
+        (data / f"s{i}.json").write_text(json.dumps(sample))
+    out = tmp_path / "out"
+
+    result = CliRunner().invoke(cli, ["scan", str(data), "--image-field", "img", "-o", str(out)])
+
+    assert result.exit_code == 0, result.output
+    summary = json.loads((out / "scan_summary.json").read_text())
+    assert summary["scanner_status"]["image_mime_type"] == {"status": "ran"}
+    assert summary["by_scanner"]["image_mime_type"]["total"] == 2
