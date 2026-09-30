@@ -201,3 +201,11 @@ def test_without_choices_field_letters_are_measured_as_before():
         "Dataset is heavily imbalanced: 9/10 samples (90%) have the answer 'a'. "
         "A model that always predicts 'a' would score 90% without understanding the questions."
     )
+
+
+def test_list_targets_with_choices_are_measured_as_before():
+    # choice_letters reads no letter inside a list, so the list is not resolved either
+    rows = [{"q": f"q{i}", "a": ["A" if i % 2 else "B"]} for i in range(20)]
+    for i, row in enumerate(rows):
+        row["choices"] = ["Yes", "No"] if i % 2 else ["No", "Yes"]
+    assert answer_distribution(rows, CHOICE_FIELDS) == answer_distribution(rows, FIELDS) == []

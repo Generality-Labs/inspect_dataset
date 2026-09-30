@@ -173,6 +173,14 @@ def resolved_answer(record: Record, fields: FieldMap) -> Any:
     return _resolve_or_keep(answer, choices)
 
 
+def resolved_scalar_answer(record: Record, fields: FieldMap) -> Any:
+    """The record's answer, with a letter answer replaced by the choice text it names.
+
+    Unlike ``resolved_answer``, a list answer is returned as it is, matching ``choice_letters``.
+    """
+    return _resolve_or_keep(record.get(fields.answer), record_choices(record, fields) or ())
+
+
 def choice_letters(records: list[Record], fields: FieldMap) -> list[str]:
     """Each row's target letter in upper case, or "" when it names none of the row's choices."""
     letters = []

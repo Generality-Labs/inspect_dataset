@@ -5,7 +5,11 @@ from typing import Any
 
 from inspect_dataset._types import FieldMap, Finding, Record
 from inspect_dataset.scanner import ScannerDef
-from inspect_dataset.scanners._answers import CHOICE_TEXT_NOTE, choice_letters, resolved_answer
+from inspect_dataset.scanners._answers import (
+    CHOICE_TEXT_NOTE,
+    choice_letters,
+    resolved_scalar_answer,
+)
 from inspect_dataset.scanners._groups import (
     MIN_GROUP_SIZE,
     group_label,
@@ -20,7 +24,9 @@ def _scan(records: list[Record], fields: FieldMap) -> list[Finding]:
     # Letter targets are measured as the choice text they name, and separately as letters
     letters = choice_letters(records, fields)
     measured = "choice_text" if any(letters) else None
-    answers = [str(resolved_answer(record, fields) or "").strip().lower() for record in records]
+    answers = [
+        str(resolved_scalar_answer(record, fields) or "").strip().lower() for record in records
+    ]
     findings: list[Finding | None] = [
         _check(non_empty, fields, group, measured)
         for group, non_empty in population_groups(records, fields, "answer_distribution", answers)
