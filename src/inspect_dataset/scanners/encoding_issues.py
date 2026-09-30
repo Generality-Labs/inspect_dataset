@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from inspect_dataset._types import FieldMap, Finding, Record
 from inspect_dataset.scanner import ScannerDef, get_sample_id
 
@@ -8,8 +10,13 @@ from inspect_dataset.scanner import ScannerDef, get_sample_id
 # legitimate in multi-line answers).
 _CONTROL_CHARS = frozenset(range(0x20)) - {0x0A, 0x0D}  # exclude \n \r
 
+# Tabs are normal indentation inside fenced code and Asymptote blocks. An
+# unclosed fence runs to the end of the text, as in Markdown.
+_CODE_BLOCK = re.compile(r"```.*?(?:```|\Z)|\[asy\].*?\[/asy\]", re.DOTALL)
+
 
 def _find_bad_chars(text: str) -> list[str]:
+    text = _CODE_BLOCK.sub(lambda m: m.group().replace("\t", ""), text)
     seen: list[str] = []
     for ch in text:
         cp = ord(ch)
@@ -53,6 +60,7 @@ encoding_issues = ScannerDef(
     fn=_scan,
     description=(
         "Flag questions or answers containing non-printable or control characters "
-        "(tabs, nulls, etc.) that are likely data entry errors."
+        "(tabs, nulls, etc.) that are likely data entry errors. Tabs inside fenced "
+        "code and Asymptote blocks are ignored."
     ),
 )
