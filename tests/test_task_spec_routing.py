@@ -140,7 +140,7 @@ def test_cli_scans_google_boolq_from_hub(fake_packages: Path, monkeypatch):
         calls.append(dataset)
         return [{"question": "is water wet", "answer": "true"}]
 
-    def fail_load_task(spec, limit=None):
+    def fail_load_task(spec, limit=None, source_info=None):
         raise AssertionError(f"routed {spec!r} to the task loader")
 
     monkeypatch.setattr(

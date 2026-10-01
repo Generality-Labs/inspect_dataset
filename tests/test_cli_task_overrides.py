@@ -21,7 +21,7 @@ _TASK_FIELDS = FieldMap(
 
 
 def _scan_fields(tmp_path: Path, monkeypatch, args: list[str]) -> FieldMap:
-    def fake_load_task_from_spec(spec, limit=None):
+    def fake_load_task_from_spec(spec, limit=None, source_info=None):
         records = [
             {
                 "input": "Which colour?",

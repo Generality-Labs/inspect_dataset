@@ -3,11 +3,13 @@ from __future__ import annotations
 import importlib
 import importlib.metadata
 import importlib.util
+import itertools
 import json
 import sys
 from pathlib import Path
 from typing import Any
 
+from inspect_dataset._source import SOURCE_FIELD, SourceInfo, capture_sources, join_by_id, loads_of
 from inspect_dataset._types import FieldMap, Record
 
 # Common field name candidates for auto-detection, in priority order
@@ -375,7 +377,9 @@ def _image_value(source: str) -> Any:
         return {"bytes": None, "path": source}
 
 
-def load_inspect_task(task_or_fn: Any, limit: int | None = None) -> tuple[list[Record], FieldMap]:
+def load_inspect_task(
+    task_or_fn: Any, limit: int | None = None, source_info: SourceInfo | None = None
+) -> tuple[list[Record], FieldMap]:
     """Load records from an inspect_ai Task object or task function.
 
     Converts each ``inspect_ai.Sample`` to a plain ``Record`` dict using the
@@ -390,17 +394,23 @@ def load_inspect_task(task_or_fn: Any, limit: int | None = None) -> tuple[list[R
     Returns a ``(records, fields)`` tuple — the ``FieldMap`` is pre-set so no
     auto-detection is needed. ``fields.group`` is set when the metadata has one obvious
     subset key (see ``detect_group_field``).
+
+    Each record also gets the raw dataset row its sample came from under ``__source__``
+    (see ``inspect_dataset._source``), when that row can be found. Pass a ``SourceInfo``
+    as ``source_info`` to learn how many records were joined, and how.
     """
-    task = task_or_fn() if callable(task_or_fn) else task_or_fn
-    dataset = getattr(task, "dataset", None)
-    if dataset is None:
-        raise ValueError("Task has no dataset")
+    with capture_sources() as capture:
+        task = task_or_fn() if callable(task_or_fn) else task_or_fn
+        dataset = getattr(task, "dataset", None)
+        if dataset is None:
+            raise ValueError("Task has no dataset")
+        samples = list(dataset) if limit is None else list(itertools.islice(dataset, limit))
 
     records: list[Record] = []
     metadata_keys: set[str] = set()
     sample_images: list[list[Any]] = []
     has_choices = False
-    for sample in dataset:
+    for sample in samples:
         record: Record = {
             "input": _input_to_str(sample.input),
             "target": _target_to_str(sample.target),
@@ -419,9 +429,21 @@ def load_inspect_task(task_or_fn: Any, limit: int | None = None) -> tuple[list[R
                     metadata_keys.add(k)
         if sample.files:
             record["__files__"] = sample.files
+        raw = capture.row_for(sample)
+        if raw is not None:
+            record[SOURCE_FIELD] = raw
         records.append(record)
-        if limit is not None and len(records) >= limit:
-            break
+
+    info = source_info if source_info is not None else SourceInfo()
+    info.total = len(records)
+    info.joined_by_record = sum(SOURCE_FIELD in r for r in records)
+    unjoined = [i for i, r in enumerate(records) if SOURCE_FIELD not in r]
+    if unjoined:
+        info.id_column, rows = join_by_id(capture, [records[i] for i in unjoined])
+        for position, row in rows.items():
+            records[unjoined[position]][SOURCE_FIELD] = row
+        info.joined_by_id = len(rows)
+    info.loads = loads_of(capture)
 
     has_images = any(sample_images)
     if has_images:
@@ -548,7 +570,28 @@ def is_task_spec(spec: str) -> bool:
     return _module_exists(f"{owner}.{name}") or _registry_has_task(spec)
 
 
-def load_task_from_spec(spec: str, limit: int | None = None) -> tuple[list[Record], FieldMap]:
+def load_task_from_spec(
+    spec: str, limit: int | None = None, source_info: SourceInfo | None = None
+) -> tuple[list[Record], FieldMap]:
+    """Load records from a task spec string.
+
+    Accepts the same spec formats as ``inspect eval``:
+
+    - Package + task name:    ``inspect_evals/gpqa_diamond``  (mirrors inspect CLI)
+    - Module + task name:     ``inspect_evals.gpqa@gpqa_diamond``
+    - File + task name:       ``path/to/task.py@task_fn``     (via inspect_ai registry)
+
+    See ``_load_task_from_spec`` for how each form is resolved. The whole load runs inside
+    one source capture, because inspect_ai's loader builds the task before
+    ``load_inspect_task`` sees it.
+    """
+    with capture_sources():
+        return _load_task_from_spec(spec, limit=limit, source_info=source_info)
+
+
+def _load_task_from_spec(
+    spec: str, limit: int | None = None, source_info: SourceInfo | None = None
+) -> tuple[list[Record], FieldMap]:
     """Load records from a task spec string.
 
     Accepts the same spec formats as ``inspect eval``:
@@ -583,7 +626,7 @@ def load_task_from_spec(spec: str, limit: int | None = None) -> tuple[list[Recor
             except ImportError as e:
                 raise ImportError(f"Could not import module {left!r}: {e}") from e
             task_obj = _find_task_in_module(module, right)
-            return load_inspect_task(task_obj, limit=limit)
+            return load_inspect_task(task_obj, limit=limit, source_info=source_info)
 
         # file@task — delegate to inspect_ai
     else:
@@ -593,7 +636,7 @@ def load_task_from_spec(spec: str, limit: int | None = None) -> tuple[list[Recor
             try:
                 module = importlib.import_module(f"{pkg}.{task_name}")
                 task_obj = _find_task_in_module(module, task_name)
-                return load_inspect_task(task_obj, limit=limit)
+                return load_inspect_task(task_obj, limit=limit, source_info=source_info)
             except (ImportError, AttributeError, ValueError):
                 pass  # fall through to inspect_ai registry
 
@@ -613,7 +656,7 @@ def load_task_from_spec(spec: str, limit: int | None = None) -> tuple[list[Recor
             f"Spec {spec!r} matched {len(tasks)} tasks; use a more specific spec "
             f"(e.g. include the task name after @)."
         )
-    return load_inspect_task(tasks[0], limit=limit)
+    return load_inspect_task(tasks[0], limit=limit, source_info=source_info)
 
 
 def resolve_fields(

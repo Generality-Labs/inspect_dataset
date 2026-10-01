@@ -19,7 +19,7 @@ _RECORDS = [
 
 
 def _scan_summary(tmp_path: Path, monkeypatch, scorers: list[str]) -> dict:
-    def fake_load_task_from_spec(spec, limit=None):
+    def fake_load_task_from_spec(spec, limit=None, source_info=None):
         fields = FieldMap(question="input", answer="target", id="id", scorers=scorers)
         return [dict(r) for r in _RECORDS], fields
 

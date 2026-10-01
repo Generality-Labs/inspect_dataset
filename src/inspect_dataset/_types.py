@@ -77,6 +77,8 @@ class ScanRun:
     # HF mode: whether split/config were filled in rather than given. None for other sources.
     split_defaulted: bool | None = None
     config_defaulted: bool | None = None
+    # Task mode: how records were joined to their raw rows (SourceInfo.to_summary()).
+    source: dict[str, Any] | None = None
 
     def by_scanner(self) -> dict[str, list[Finding]]:
         result: dict[str, list[Finding]] = {}

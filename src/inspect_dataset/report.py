@@ -29,6 +29,16 @@ def _source_suffix(run: ScanRun) -> str:
     return f" ({run.group_by_source})" if run.group_by_source else ""
 
 
+def _source_line(run: ScanRun) -> str | None:
+    """How many samples were joined to their raw dataset rows, in task mode."""
+    if run.source is None:
+        return None
+    line = f"{run.source['joined']:,} of {run.source['total']:,} samples"
+    if run.source["joined_by_id"]:
+        line += f" ({run.source['joined_by_id']:,} by id column {run.source['id_column']!r})"
+    return line
+
+
 def print_report(run: ScanRun, console: Console | None = None) -> None:
     """Print a rich summary of scan results to the terminal."""
     if console is None:
@@ -43,6 +53,8 @@ def print_report(run: ScanRun, console: Console | None = None) -> None:
     if run.scorers:
         console.print(f"  Scorers: {', '.join(run.scorers)}")
     console.print(f"  Samples: {run.total_samples:,}")
+    if (source := _source_line(run)) is not None:
+        console.print(f"  Source rows: {escape(source)}")
     if run.group_by is not None:
         console.print(f"  Grouped by: {run.group_by}{_source_suffix(run)}")
     console.print(f"  Total findings: {len(run.findings):,}")
@@ -125,6 +137,7 @@ def save_findings(
         "scorers": run.scorers,
         "split_defaulted": run.split_defaulted,
         "config_defaulted": run.config_defaulted,
+        "source": run.source,
         "files_root": files_root,
         "total_samples": run.total_samples,
         "total_findings": len(run.findings),
@@ -190,6 +203,8 @@ def _write_markdown_report(run: ScanRun, path: Path) -> None:
     lines += [
         f"**Samples scanned:** {run.total_samples:,}",
     ]
+    if (source := _source_line(run)) is not None:
+        lines.append(f"**Source rows:** {source}")
     if run.group_by is not None:
         lines.append(f"**Grouped by:** `{run.group_by}`{_source_suffix(run)}")
     lines += [

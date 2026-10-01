@@ -223,7 +223,7 @@ def test_cli_several_configs_names_config_option(tmp_path: Path, monkeypatch):
 
 
 def test_cli_task_mode_records_null_split_and_defaulted_flags(tmp_path: Path, monkeypatch):
-    def fake_load_task_from_spec(spec, limit=None):
+    def fake_load_task_from_spec(spec, limit=None, source_info=None):
         from inspect_dataset._types import FieldMap
 
         return [dict(r) for r in _RECORDS], FieldMap(question="q", answer="a")

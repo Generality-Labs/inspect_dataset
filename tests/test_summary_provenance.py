@@ -111,6 +111,7 @@ def test_cli_hf_mode_summary(tmp_path: Path, monkeypatch):
     summary = _scan(tmp_path, "owner/ds", ["--question-field", "q", "--answer-field", "a"])
     assert summary["version"] == _VERSION
     assert summary["task"] is None
+    assert summary["source"] is None
     assert summary["scorers"] is None
 
 
@@ -155,7 +156,7 @@ def test_cli_task_mode_summary(tmp_path: Path):
 
 
 def test_cli_task_mode_field_override_keeps_scorers(tmp_path: Path, monkeypatch):
-    def fake_load_task_from_spec(spec, limit=None):
+    def fake_load_task_from_spec(spec, limit=None, source_info=None):
         records = [{"input": r["q"], "target": r["a"], "id": i} for i, r in enumerate(_RECORDS)]
         fields = FieldMap(question="input", answer="target", id="id", scorers=["inspect_ai/f1"])
         return records, fields
@@ -169,7 +170,7 @@ def test_cli_task_mode_field_override_keeps_scorers(tmp_path: Path, monkeypatch)
 
 
 def test_cli_task_mode_with_llm_scanner_records_task_and_scorers(tmp_path: Path, monkeypatch):
-    def fake_load_task_from_spec(spec, limit=None):
+    def fake_load_task_from_spec(spec, limit=None, source_info=None):
         records = [{"input": r["q"], "target": r["a"], "id": i} for i, r in enumerate(_RECORDS)]
         fields = FieldMap(question="input", answer="target", id="id", scorers=["inspect_ai/f1"])
         return records, fields
