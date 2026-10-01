@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 import datasets
+import pytest
 from inspect_ai import Task
 from inspect_ai.dataset import MemoryDataset, Sample, csv_dataset, json_dataset
 
@@ -131,10 +132,10 @@ def _hand_built_task(ids: list[str], configs: list[str]):
 
 def test_hand_built_samples_join_by_id_across_every_table(monkeypatch):
     tables = {
-        "art": [{"id": "art_1", "question": "a?", "subject": "Art"}],
+        "art": [{"id": "art_1", "question": "who painted it?", "subject": "Art"}],
         "bio": [
-            {"id": "bio_1", "question": "b?", "subject": "Bio"},
-            {"id": "bio_2", "question": "c?", "subject": "Bio"},
+            {"id": "bio_1", "question": "what is a cell?", "subject": "Bio"},
+            {"id": "bio_2", "question": "what is a gene?", "subject": "Bio"},
         ],
     }
     monkeypatch.setattr(datasets, "load_dataset", _fake_load_dataset(tables))
@@ -171,20 +172,23 @@ def test_id_join_ignores_columns_with_repeated_values(monkeypatch):
 
 
 def test_unmatched_samples_have_no_source_row(monkeypatch):
-    tables = {"only": [{"id": "s1", "question": "q1"}]}
+    tables = {"only": [{"id": "s1", "question": "question one"}]}
     monkeypatch.setattr(datasets, "load_dataset", _fake_load_dataset(tables))
 
     def task() -> Task:
         datasets.load_dataset("only", split="test")
         return Task(
             dataset=MemoryDataset(
-                [Sample(id="s1", input="q1", target="x"), Sample(id="zz", input="?", target="x")]
+                [
+                    Sample(id="s1", input="question one", target="x"),
+                    Sample(id="zz", input="?", target="x"),
+                ]
             )
         )
 
     info = SourceInfo()
     records, _ = load_inspect_task(task, source_info=info)
-    assert records[0][SOURCE_FIELD] == {"id": "s1", "question": "q1"}
+    assert records[0][SOURCE_FIELD] == {"id": "s1", "question": "question one"}
     assert SOURCE_FIELD not in records[1]
     assert (info.joined_by_id, info.total) == (1, 2)
 
@@ -328,3 +332,125 @@ def test_copied_samples_keep_their_row(tmp_path: Path):
         ("sub_1", "q2"),
         ("sub_2", "q3"),
     ]
+
+
+# ---------------------------------------------------------------------------
+# Review of #54: hf_dataset paths, wrong-row id matches, signature changes,
+# nested mutation, image form, and load provenance
+# ---------------------------------------------------------------------------
+
+
+def _hf_json(tmp_path: Path, **kwargs):
+    from inspect_ai.dataset import hf_dataset
+
+    return hf_dataset(
+        "json",
+        split="train",
+        data_files=str(_jsonl(tmp_path)),
+        sample_fields=_to_sample,
+        **{"cached": False, **kwargs},
+    )
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [{}, {"shuffle": True, "seed": 2}, {"shuffle": True, "seed": 2, "auto_id": True}],
+    ids=["plain", "shuffled", "shuffled-auto-id"],
+)
+def test_hf_dataset_samples_carry_their_raw_row(tmp_path: Path, kwargs: dict):
+    info = SourceInfo()
+    records, _ = load_inspect_task(
+        lambda: Task(dataset=_hf_json(tmp_path, **kwargs)), source_info=info
+    )
+    assert info.joined_by_record == 3
+    for record in records:
+        assert record["input"] == record[SOURCE_FIELD]["question"]
+
+
+def test_hf_dataset_records_its_load_even_from_inspect_cache(tmp_path: Path, monkeypatch):
+    # The second load reads inspect_ai's own disk cache and never calls load_dataset
+    import inspect_ai.dataset._sources.hf as hf_source
+
+    monkeypatch.setattr(hf_source, "inspect_cache_dir", lambda name: tmp_path / name)
+    for _ in range(2):
+        info = SourceInfo()
+        load_inspect_task(lambda: Task(dataset=_hf_json(tmp_path, cached=True)), source_info=info)
+        assert info.loads == [
+            {"path": "json", "split": "train", "data_files": str(tmp_path / "rows.jsonl")}
+        ]
+
+
+def test_id_join_rejects_rows_that_do_not_match_the_sample(monkeypatch):
+    # Positional ids 1..N against a 0-based idx column: every id hits the wrong row
+    rows = [{"idx": i, "question": f"question number {i}"} for i in range(5)]
+    monkeypatch.setattr(datasets, "load_dataset", _fake_load_dataset({"t": rows}))
+
+    def task() -> Task:
+        datasets.load_dataset("t", split="test")
+        samples = [Sample(id=i + 1, input=f"question number {i}", target="x") for i in range(5)]
+        return Task(dataset=MemoryDataset(samples))
+
+    info = SourceInfo()
+    records, _ = load_inspect_task(task, source_info=info)
+    assert info.joined_by_id == 0
+    assert all(SOURCE_FIELD not in r for r in records)
+
+
+def test_data_to_samples_wrapper_passes_new_arguments_through(tmp_path: Path):
+    from inspect_ai.dataset import _util
+
+    from inspect_dataset._source import capture_sources
+
+    with capture_sources():
+        pass
+    wrapper = _util.data_to_samples
+    calls = []
+
+    def future_signature(data, data_to_sample, auto_id, *, new_option=None):
+        calls.append(new_option)
+        return [data_to_sample(r) for r in data]
+
+    original = wrapper.__wrapped__
+    try:
+        wrapper.__wrapped__ = future_signature
+        # outside a capture, and inside one
+        assert len(wrapper(ROWS, _to_sample, False, new_option=1)) == 3
+        with capture_sources():
+            assert len(wrapper(ROWS, _to_sample, False, new_option=2)) == 3
+    finally:
+        wrapper.__wrapped__ = original
+    assert calls == [1, 2]
+
+
+def test_raw_row_is_a_deep_snapshot(tmp_path: Path):
+    path = tmp_path / "rows.jsonl"
+    path.write_text(json.dumps({"question": "q", "answer": 0, "choices": ["a", "b"]}) + "\n")
+
+    def reversing(record: dict) -> Sample:
+        record["choices"].reverse()
+        return Sample(input=record["question"], target="B", choices=record["choices"])
+
+    records, _ = load_inspect_task(lambda: Task(dataset=json_dataset(str(path), reversing)))
+    assert records[0][SOURCE_FIELD]["choices"] == ["a", "b"]
+
+
+def test_id_joined_rows_keep_images_as_bytes_dicts(monkeypatch):
+    png = b"\x89PNG\r\n\x1a\n" + b"\x00" * 64
+    table = datasets.Dataset.from_dict(
+        {"id": ["s1"], "question": ["what is shown?"], "image": [{"bytes": png, "path": "a.png"}]},
+        features=datasets.Features(
+            {
+                "id": datasets.Value("string"),
+                "question": datasets.Value("string"),
+                "image": datasets.Image(),
+            }
+        ),
+    )
+    monkeypatch.setattr(datasets, "load_dataset", lambda *a, **k: table)
+
+    def task() -> Task:
+        datasets.load_dataset("imgs", split="test")
+        return Task(dataset=MemoryDataset([Sample(id="s1", input="what is shown?", target="x")]))
+
+    records, _ = load_inspect_task(task)
+    assert records[0][SOURCE_FIELD]["image"] == {"bytes": png, "path": "a.png"}

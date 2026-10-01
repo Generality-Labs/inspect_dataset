@@ -439,7 +439,7 @@ def load_inspect_task(
     info.joined_by_record = sum(SOURCE_FIELD in r for r in records)
     unjoined = [i for i, r in enumerate(records) if SOURCE_FIELD not in r]
     if unjoined:
-        info.id_column, rows = join_by_id(capture, [records[i]["id"] for i in unjoined])
+        info.id_column, rows = join_by_id(capture, [records[i] for i in unjoined])
         for position, row in rows.items():
             records[unjoined[position]][SOURCE_FIELD] = row
         info.joined_by_id = len(rows)
