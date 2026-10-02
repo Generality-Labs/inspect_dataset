@@ -1,5 +1,5 @@
 from inspect_dataset._types import Category, FieldMap, Finding, ScanRun, Severity
-from inspect_dataset._version import package_version
+from inspect_dataset._version import package_version as _package_version
 from inspect_dataset.scanner import (
     AnyScanner,
     AsyncDatasetScanner,
@@ -15,7 +15,7 @@ from inspect_dataset.scanner import (
 
 # The version is set once, in pyproject.toml; this reads it back from the
 # installed package metadata.
-__version__ = package_version()
+__version__ = _package_version()
 
 __all__ = [
     "AnyScanner",
