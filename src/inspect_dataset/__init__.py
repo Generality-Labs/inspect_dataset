@@ -12,7 +12,7 @@ from inspect_dataset.scanner import (
     run_scanners_async,
 )
 
-__version__ = "0.2.0"
+__version__ = "0.4.0"
 
 __all__ = [
     "AnyScanner",

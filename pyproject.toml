@@ -1,6 +1,6 @@
 [project]
 name = "inspect-dataset"
-version = "0.4.0"
+dynamic = ["version"]
 description = "Dataset quality scanner for AI evaluation datasets"
 readme = "README.md"
 license = "MIT"
@@ -35,14 +35,24 @@ inspect = [
 ]
 
 [build-system]
-requires = ["uv_build>=0.12.3,<0.13.0"]
-build-backend = "uv_build"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
-[tool.uv.build-backend]
+# hatchling rather than uv_build: uv_build needs a static version, and the
+# version's single source is __version__ in src/inspect_dataset/__init__.py.
+[tool.hatch.version]
+path = "src/inspect_dataset/__init__.py"
+
+[tool.hatch.build]
 # The viewer frontend ships only as its built bundle (_view/www/dist);
 # node_modules must never reach the sdist or wheel.
-source-exclude = ["**/node_modules/**"]
-wheel-exclude = ["**/node_modules/**"]
+exclude = ["**/node_modules"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/inspect_dataset"]
+
+[tool.hatch.build.targets.sdist]
+only-include = ["src/inspect_dataset", "README.md", "LICENSE"]
 
 [tool.scriv]
 # One fragment per pull request in changelog.d/, collected into CHANGELOG.md
@@ -58,9 +68,7 @@ md_html_anchors = false
 # Without this, two fragments in one category leave a blank line between them,
 # which makes the list loose and fails mdformat on the release commit.
 compact_fragments = true
-# pyproject.toml, not __init__.py: uv_build reads the version from here, and
-# __init__.__version__ has not tracked it.
-version = "literal: pyproject.toml: project.version"
+version = "literal: src/inspect_dataset/__init__.py: __version__"
 
 [tool.ruff]
 line-length = 100
