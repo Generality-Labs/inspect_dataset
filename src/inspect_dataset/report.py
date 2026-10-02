@@ -1,17 +1,42 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
 from rich import box
 from rich.console import Console
+from rich.markup import escape
 from rich.table import Table
 
 from inspect_dataset._types import FieldMap, Record, ScanRun
+from inspect_dataset._version import package_version
 
 _SEVERITY_COLOUR = {"high": "red", "medium": "yellow", "low": "cyan"}
 _SEVERITY_ORDER = {"high": 0, "medium": 1, "low": 2}
+
+
+def _not_applicable(run: ScanRun) -> list[tuple[str, str]]:
+    return sorted(
+        (name, status.get("reason", ""))
+        for name, status in run.scanner_status.items()
+        if status.get("status") == "not_applicable"
+    )
+
+
+def _source_suffix(run: ScanRun) -> str:
+    return f" ({run.group_by_source})" if run.group_by_source else ""
+
+
+def _source_line(run: ScanRun) -> str | None:
+    """How many samples were joined to their raw dataset rows, in task mode."""
+    if run.source is None:
+        return None
+    line = f"{run.source['joined']:,} of {run.source['total']:,} samples"
+    if run.source["joined_by_id"]:
+        line += f" ({run.source['joined_by_id']:,} by id column {run.source['id_column']!r})"
+    return line
 
 
 def print_report(run: ScanRun, console: Console | None = None) -> None:
@@ -20,13 +45,21 @@ def print_report(run: ScanRun, console: Console | None = None) -> None:
         console = Console()
 
     console.print()
-    console.rule("[bold]inspect-dataset scan report[/bold]")
+    console.rule(f"[bold]inspect-dataset {package_version()} scan report[/bold]")
     console.print(
         f"  Dataset: [bold]{run.dataset_name}[/bold]"
         + (f"  split={run.split}" if run.split else "")
     )
+    if run.scorers:
+        console.print(f"  Scorers: {', '.join(run.scorers)}")
     console.print(f"  Samples: {run.total_samples:,}")
+    if (source := _source_line(run)) is not None:
+        console.print(f"  Source rows: {escape(source)}")
+    if run.group_by is not None:
+        console.print(f"  Grouped by: {run.group_by}{_source_suffix(run)}")
     console.print(f"  Total findings: {len(run.findings):,}")
+    for name, reason in _not_applicable(run):
+        console.print(f"  [dim]Not applicable: {escape(name)} ({escape(reason)})[/dim]")
     console.print()
 
     if not run.findings:
@@ -92,11 +125,19 @@ def save_findings(
         out.write_text(json.dumps([f.to_dict() for f in findings], indent=2, default=str))
 
     summary = {
+        "version": package_version(),
         "dataset_name": run.dataset_name,
         "split": run.split,
         "source_type": run.source_type,
         "revision": run.revision,
         "config": run.config,
+        "group_by": run.group_by,
+        "group_by_source": run.group_by_source,
+        "task": run.task,
+        "scorers": run.scorers,
+        "split_defaulted": run.split_defaulted,
+        "config_defaulted": run.config_defaulted,
+        "source": run.source,
         "files_root": files_root,
         "total_samples": run.total_samples,
         "total_findings": len(run.findings),
@@ -110,6 +151,7 @@ def save_findings(
             for name, findings in by_scanner.items()
         },
         "by_severity": {sev: len(findings) for sev, findings in run.by_severity().items()},
+        "scanner_status": run.scanner_status,
     }
     (output_dir / "scan_summary.json").write_text(json.dumps(summary, indent=2))
 
@@ -119,8 +161,8 @@ def save_findings(
         for i, rec in enumerate(records):
             sample: dict[str, Any] = {
                 "index": i,
-                "question": str(rec.get(fields.question, "")),
-                "answer": str(rec.get(fields.answer, "")),
+                "question": _as_text(rec.get(fields.question)),
+                "answer": _as_text(rec.get(fields.answer)),
             }
             if fields.id and fields.id in rec:
                 sample["id"] = rec[fields.id]
@@ -130,12 +172,42 @@ def save_findings(
     _write_markdown_report(run, output_dir / "REPORT.md")
 
 
+def _as_text(value: Any) -> str:
+    """A samples.json field as a string, which the viewer expects: lists and structs as JSON."""
+    if value is None:
+        return ""
+    if isinstance(value, Mapping | list | tuple):
+        try:
+            return json.dumps(value, indent=2, ensure_ascii=False, default=_json_default)
+        except (TypeError, ValueError):
+            # Non-string dict keys or a circular value: a repr beats losing the scan output
+            return str(value)
+    return str(value)
+
+
+def _json_default(value: Any) -> str:
+    if isinstance(value, bytes):
+        return f"<{len(value)} bytes>"
+    return str(value)
+
+
 def _write_markdown_report(run: ScanRun, path: Path) -> None:
     lines = [
         "# inspect-dataset Report",
         "",
+        f"**inspect-dataset version:** {package_version()}",
         f"**Dataset:** {run.dataset_name}" + (f" (split: `{run.split}`)" if run.split else ""),
+    ]
+    if run.scorers:
+        lines.append("**Scorers:** " + ", ".join(f"`{s}`" for s in run.scorers))
+    lines += [
         f"**Samples scanned:** {run.total_samples:,}",
+    ]
+    if (source := _source_line(run)) is not None:
+        lines.append(f"**Source rows:** {source}")
+    if run.group_by is not None:
+        lines.append(f"**Grouped by:** `{run.group_by}`{_source_suffix(run)}")
+    lines += [
         f"**Total findings:** {len(run.findings):,}",
         "",
         "## Summary",
@@ -150,6 +222,11 @@ def _write_markdown_report(run: ScanRun, path: Path) -> None:
         med = sum(1 for f in findings if f.severity == "medium")
         low = sum(1 for f in findings if f.severity == "low")
         lines.append(f"| `{name}` | {len(findings)} | {high} | {med} | {low} |")
+
+    not_applicable = _not_applicable(run)
+    if not_applicable:
+        lines += ["", "## Not applicable", ""]
+        lines += [f"- `{name}`: {reason}" for name, reason in not_applicable]
 
     lines += ["", "## Findings", ""]
 

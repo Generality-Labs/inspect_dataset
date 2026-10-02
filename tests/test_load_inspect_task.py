@@ -2,7 +2,14 @@
 
 from __future__ import annotations
 
+import base64
+from pathlib import Path
+
 import pytest
+from inspect_ai import Task
+from inspect_ai.dataset import Sample
+from inspect_ai.model import ChatMessageSystem, ChatMessageUser, ContentImage, ContentText
+from inspect_ai.scorer import Score, accuracy, choice, match, scorer
 
 from inspect_dataset.loader import (
     _input_to_str,
@@ -10,6 +17,10 @@ from inspect_dataset.loader import (
     load_inspect_task,
     load_task_from_spec,
 )
+from inspect_dataset.scanners._answers import answer_texts, resolved_answer
+from inspect_dataset.scanners.answer_length import answer_length
+from inspect_dataset.scanners.duplicate_questions import duplicate_questions
+from inspect_dataset.scanners.image_mime_type import image_mime_type
 
 # ---------------------------------------------------------------------------
 # Helpers — minimal stand-ins for inspect_ai objects
@@ -26,6 +37,12 @@ class _ContentBlock:
     def __init__(self, type: str, text: str) -> None:
         self.type = type
         self.text = text
+
+
+class _ContentImage:
+    def __init__(self, image: str) -> None:
+        self.type = "image"
+        self.image = image
 
 
 class _Sample:
@@ -145,6 +162,42 @@ def test_list_target_uses_first():
     assert records[0]["target"] == "yes"
 
 
+def test_list_target_keeps_every_target():
+    task = _make_task(_Sample("q", ["yes", "correct"]))
+    records, _ = load_inspect_task(task)
+    assert records[0]["targets"] == ["yes", "correct"]
+
+
+def test_scalar_target_is_a_one_element_target_list():
+    task = _make_task(_Sample("q", "liver"))
+    records, _ = load_inspect_task(task)
+    assert records[0]["targets"] == ["liver"]
+
+
+def test_empty_list_target_has_no_targets():
+    task = _make_task(_Sample("q", []))
+    records, _ = load_inspect_task(task)
+    assert records[0]["target"] == ""
+    assert records[0]["targets"] == []
+
+
+def test_every_target_is_measured_through_the_star_subfield():
+    task = _make_task(
+        _Sample("q1", ["4", "four apples in a basket on the table"], id="a"),
+        _Sample("q2", "Paris", id="b"),
+    )
+    records, fields = load_inspect_task(task)
+    fields.answer = "targets"
+    fields.answer_subfield = "*"
+    fields.scorers = ["inspect_ai/match"]  # the stand-in task has no scorer
+    assert answer_texts(records, fields, "answer_length") == [
+        ["4", "four apples in a basket on the table"],
+        ["Paris"],
+    ]
+    findings = answer_length.fn(records, fields)
+    assert [(f.sample_id, f.metadata["element_index"]) for f in findings] == [("a", 1)]
+
+
 def test_metadata_merged_into_record():
     task = _make_task(_Sample("q", "a", metadata={"topic": "radiology", "difficulty": "hard"}))
     records, _ = load_inspect_task(task)
@@ -152,10 +205,93 @@ def test_metadata_merged_into_record():
     assert records[0]["difficulty"] == "hard"
 
 
+# ---------------------------------------------------------------------------
+# Group field auto-detection (issue #36)
+# ---------------------------------------------------------------------------
+
+
+def _task_with_metadata(*metadata: dict) -> _Task:
+    return _make_task(*(_Sample(f"q{i}", "a", id=i, metadata=m) for i, m in enumerate(metadata)))
+
+
+def test_single_subset_candidate_is_the_group():
+    task = _task_with_metadata({"dataset_name": "navigate"}, {"dataset_name": "web_of_lies"})
+    _, fields = load_inspect_task(task)
+    assert fields.group == "dataset_name"
+
+
+def test_no_subset_candidate_means_no_group():
+    task = _task_with_metadata({"topic": "a"}, {"topic": "b"})
+    _, fields = load_inspect_task(task)
+    assert fields.group is None
+
+
+def test_two_subset_candidates_mean_no_group():
+    task = _task_with_metadata(
+        {"subject": "law", "category": "x"}, {"subject": "math", "category": "y"}
+    )
+    _, fields = load_inspect_task(task)
+    assert fields.group is None
+
+
+def test_candidate_with_one_value_is_ignored():
+    task = _task_with_metadata({"subject": "law"}, {"subject": "law"})
+    _, fields = load_inspect_task(task)
+    assert fields.group is None
+
+
+def test_single_valued_candidate_does_not_block_another():
+    task = _task_with_metadata(
+        {"subject": "law", "category": "x"}, {"subject": "math", "category": "x"}
+    )
+    _, fields = load_inspect_task(task)
+    assert fields.group == "subject"
+
+
+def test_candidate_with_non_scalar_values_is_ignored():
+    task = _task_with_metadata({"category": ["a"]}, {"category": ["b"]})
+    _, fields = load_inspect_task(task)
+    assert fields.group is None
+
+
+def test_candidate_missing_from_some_samples_still_counts():
+    task = _task_with_metadata({"subject": "law"}, {"subject": "math"}, {})
+    _, fields = load_inspect_task(task)
+    assert fields.group == "subject"
+
+
 def test_choices_preserved():
     task = _make_task(_Sample("which modality?", "mri", choices=["mri", "ct", "xray"]))
     records, _ = load_inspect_task(task)
     assert records[0]["choices"] == ["mri", "ct", "xray"]
+
+
+def test_choices_field_set_when_a_sample_has_choices():
+    task = _make_task(
+        _Sample("open question", "liver"),
+        _Sample("which modality?", "A", choices=["mri", "ct"]),
+    )
+    records, fields = load_inspect_task(task)
+    assert fields.choices == "choices"
+    assert "choices" not in records[0]
+
+
+def test_choices_field_unset_without_choices():
+    _, fields = load_inspect_task(_make_task(_Sample("q", "a"), _Sample("q2", "b")))
+    assert fields.choices is None
+
+
+def test_choices_in_metadata_do_not_set_the_choices_field():
+    task = _make_task(_Sample("q", "a", metadata={"choices": {"label": ["A"], "text": ["x"]}}))
+    _, fields = load_inspect_task(task)
+    assert fields.choices is None
+
+
+def test_real_sample_choices_resolve_from_letter_target():
+    task = Task(dataset=[Sample(input="Pick", target="B", choices=["red", "blue"], id="s1")])
+    records, fields = load_inspect_task(task)
+    assert records[0]["choices"] == ["red", "blue"]
+    assert resolved_answer(records[0], fields) == "blue"
 
 
 def test_files_stored_under_dunder_key():
@@ -179,6 +315,176 @@ def test_multiple_samples_all_loaded():
     records, _ = load_inspect_task(task)
     assert len(records) == 3
     assert [r["id"] for r in records] == ["s1", "s2", "s3"]
+
+
+# ---------------------------------------------------------------------------
+# load_inspect_task — images from the sample input
+# ---------------------------------------------------------------------------
+
+PNG_BYTES = b"\x89PNG\r\n\x1a\n" + b"\x00" * 24
+JPEG_BYTES = b"\xff\xd8\xff\xe0" + b"\x00" * 24
+PNG_URI = "data:image/png;base64," + base64.b64encode(PNG_BYTES).decode()
+
+
+def _user(*parts: object) -> _Msg:
+    msg = _Msg("user", "")
+    msg.content = list(parts)  # type: ignore[assignment]
+    return msg
+
+
+def test_image_file_path_is_read_into_bytes(tmp_path: Path):
+    path = tmp_path / "scan.png"
+    path.write_bytes(PNG_BYTES)
+    task = _make_task(_Sample([_user(_ContentBlock("text", "what?"), _ContentImage(str(path)))]))
+    records, fields = load_inspect_task(task)
+    assert records[0]["images"] == [{"bytes": PNG_BYTES, "path": str(path)}]
+    assert fields.image == "images"
+
+
+def test_missing_image_file_keeps_its_path(tmp_path: Path):
+    path = str(tmp_path / "gone.png")
+    records, _ = load_inspect_task(_make_task(_Sample([_user(_ContentImage(path))])))
+    assert records[0]["images"] == [{"bytes": None, "path": path}]
+
+
+def test_data_uri_image_is_kept_as_is():
+    records, _ = load_inspect_task(_make_task(_Sample([_user(_ContentImage(PNG_URI))])))
+    assert records[0]["images"] == [PNG_URI]
+
+
+def test_url_image_keeps_the_url_as_its_path():
+    url = "https://example.com/x.jpg"
+    records, _ = load_inspect_task(_make_task(_Sample([_user(_ContentImage(url))])))
+    assert records[0]["images"] == [{"bytes": None, "path": url}]
+
+
+def test_images_are_collected_from_every_message_in_order():
+    msgs = [
+        _user(_ContentImage("https://example.com/1.png"), _ContentBlock("text", "first")),
+        _Msg("assistant", "noted"),
+        {"role": "user", "content": [{"type": "image", "image": PNG_URI}]},
+        _user(
+            _ContentBlock("text", "which is larger?"), _ContentImage("https://example.com/3.png")
+        ),
+    ]
+    records, _ = load_inspect_task(_make_task(_Sample(msgs)))
+    assert records[0]["images"] == [
+        {"bytes": None, "path": "https://example.com/1.png"},
+        PNG_URI,
+        {"bytes": None, "path": "https://example.com/3.png"},
+    ]
+    assert records[0]["input"] == "which is larger?"
+
+
+def test_samples_without_images_get_an_empty_list_when_others_have_them():
+    task = _make_task(_Sample("text only"), _Sample([_user(_ContentImage(PNG_URI))]))
+    records, fields = load_inspect_task(task)
+    assert records[0]["images"] == []
+    assert records[1]["images"] == [PNG_URI]
+    assert fields.image == "images"
+
+
+def test_image_field_unset_without_images():
+    task = _make_task(_Sample("text only"), _Sample([_user(_ContentBlock("text", "q"))]))
+    records, fields = load_inspect_task(task)
+    assert fields.image is None
+    assert all("images" not in r for r in records)
+
+
+def test_real_inspect_sample_images_feed_the_image_scanners(tmp_path: Path):
+    mislabelled = tmp_path / "chart.jpg"
+    mislabelled.write_bytes(PNG_BYTES)
+    photo = tmp_path / "photo.jpg"
+    photo.write_bytes(JPEG_BYTES)
+
+    def sample(sid: str, image: Path) -> Sample:
+        return Sample(
+            input=[
+                ChatMessageSystem(content="Answer briefly."),
+                ChatMessageUser(
+                    content=[ContentText(text="What is shown?"), ContentImage(image=str(image))]
+                ),
+                ChatMessageUser(
+                    content=[ContentImage(image=PNG_URI), ContentText(text="And here?")]
+                ),
+            ],
+            target="a chart",
+            id=sid,
+        )
+
+    task = Task(dataset=[sample("s1", mislabelled), sample("s2", photo), sample("s3", photo)])
+    records, fields = load_inspect_task(task)
+    assert fields.image == "images"
+    assert records[0]["input"] == "And here?"
+    assert records[0]["images"] == [{"bytes": PNG_BYTES, "path": str(mislabelled)}, PNG_URI]
+
+    mime = image_mime_type(records, fields)
+    assert [(f.sample_id, f.metadata["image_index"]) for f in mime] == [("s1", 0)]
+    assert mime[0].metadata["declared_mime"] == "image/jpeg"
+    assert mime[0].metadata["actual_mime"] == "image/png"
+
+    dups = duplicate_questions(records, fields)
+    exact = [f.metadata["duplicate_ids"] for f in dups if f.metadata["duplicate_type"] == "exact"]
+    assert exact == [["s2", "s3"]]
+
+
+# ---------------------------------------------------------------------------
+# load_inspect_task — scorer registry names on the FieldMap
+# ---------------------------------------------------------------------------
+
+
+@scorer(metrics=[accuracy()])
+def custom_scorer():
+    async def score(state, target):
+        return Score(value=1)
+
+    return score
+
+
+def _real_task(**kwargs) -> Task:
+    return Task(dataset=[Sample(input="What is 2+2?", target="4", id="s1")], **kwargs)
+
+
+def test_builtin_scorer_registry_name():
+    _, fields = load_inspect_task(_real_task(scorer=choice()))
+    assert fields.scorers == ["inspect_ai/choice"]
+
+
+def test_multiple_scorers_keep_their_order():
+    _, fields = load_inspect_task(_real_task(scorer=[match(), choice()]))
+    assert fields.scorers == ["inspect_ai/match", "inspect_ai/choice"]
+
+
+def test_custom_scorer_registry_name():
+    _, fields = load_inspect_task(_real_task(scorer=custom_scorer()))
+    assert fields.scorers == ["custom_scorer"]
+
+
+def test_task_without_scorer_has_empty_scorer_list():
+    _, fields = load_inspect_task(_real_task())
+    assert fields.scorers == []
+
+
+def test_stand_in_task_without_scorer_attribute():
+    _, fields = load_inspect_task(_make_task(_Sample("q", "a")))
+    assert fields.scorers == []
+
+
+def test_single_scorer_not_in_a_list():
+    task = _make_task(_Sample("q", "a"))
+    task.scorer = choice()  # type: ignore[attr-defined]
+    _, fields = load_inspect_task(task)
+    assert fields.scorers == ["inspect_ai/choice"]
+
+
+def test_non_registry_scorer_is_skipped():
+    async def plain(state, target):
+        return Score(value=1)
+
+    task = _make_task(_Sample("q", "a"))
+    task.scorer = [plain, choice()]  # type: ignore[attr-defined]
+    _, fields = load_inspect_task(task)
+    assert fields.scorers == ["inspect_ai/choice"]
 
 
 # ---------------------------------------------------------------------------

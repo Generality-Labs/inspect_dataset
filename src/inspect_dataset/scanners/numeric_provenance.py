@@ -58,6 +58,7 @@ def _scan(records: list[Record], fields: FieldMap) -> list[Finding]:
 numeric_provenance = ScannerDef(
     name="numeric_provenance",
     fn=_scan,
+    requires=["artifacts", "answer"],
     description=(
         "Cross-check every number in the gold against cached extraction tool "
         "outputs (requires --files-root): a number no tool extracted from the "

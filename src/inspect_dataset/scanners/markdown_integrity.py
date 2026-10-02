@@ -149,6 +149,7 @@ def _scan(records: list[Record], fields: FieldMap) -> list[Finding]:
 markdown_integrity = ScannerDef(
     name="markdown_integrity",
     fn=_scan,
+    requires="answer",
     description=(
         "Flag structural problems in Markdown answers: table rows whose column "
         "count differs from the header, missing delimiter rows, empty table "

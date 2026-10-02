@@ -1,16 +1,23 @@
 from __future__ import annotations
 
 import importlib
+import importlib.metadata
+import importlib.util
+import itertools
 import json
+import sys
 from pathlib import Path
 from typing import Any
 
+from inspect_dataset._source import SOURCE_FIELD, SourceInfo, capture_sources, join_by_id, loads_of
 from inspect_dataset._types import FieldMap, Record
 
 # Common field name candidates for auto-detection, in priority order
 _QUESTION_CANDIDATES = ["question", "prompt", "input", "text", "query", "instruction"]
 _ANSWER_CANDIDATES = ["answer", "label", "target", "output", "response", "gold"]
 _ID_CANDIDATES = ["id", "sample_id", "idx", "index", "qid"]
+# Sample.metadata keys that multi-subset inspect_evals tasks use to name a sample's subset
+_GROUP_CANDIDATES = ["dataset_name", "subset", "subject", "category"]
 
 
 def auto_detect_fields(columns: list[str]) -> FieldMap:
@@ -41,6 +48,85 @@ def auto_detect_fields(columns: list[str]) -> FieldMap:
         answer=answer,
         id=pick(_ID_CANDIDATES),
     )
+
+
+class DatasetSelectionError(ValueError):
+    """A HuggingFace dataset needs a split or config that was not given.
+
+    ``option`` is ``"split"`` or ``"config"``; ``choices`` lists the values
+    the dataset offers.
+    """
+
+    def __init__(self, message: str, option: str, choices: list[str]) -> None:
+        super().__init__(message)
+        self.option = option
+        self.choices = choices
+
+
+def resolve_hf_split_config(
+    path: str,
+    split: str | None,
+    config: str | None,
+    revision: str | None = None,
+) -> tuple[str, str | None, bool, bool]:
+    """Fill in the split and config of a HuggingFace dataset when not given.
+
+    Returns ``(split, config, split_defaulted, config_defaulted)``.
+
+    - Config not given: use the dataset's only config or its default config.
+      Several configs and no default raise ``DatasetSelectionError``.
+    - Split not given: use the only split, else ``train`` if present. Several
+      splits without ``train`` raise ``DatasetSelectionError``.
+
+    One ``load_dataset_builder`` call answers both questions. It reads the
+    dataset card and file list, not the data, and works offline for cached
+    datasets. ``get_dataset_config_names`` is only called to list the configs
+    when the builder refuses to pick one.
+    """
+    split_defaulted = split is None
+    config_defaulted = config is None
+    if split is not None and config is not None:
+        return split, config, False, False
+
+    import datasets
+
+    try:
+        builder = datasets.load_dataset_builder(path, name=config, revision=revision)
+    except ValueError:
+        if config is not None:
+            raise
+        configs = datasets.get_dataset_config_names(path, revision=revision)
+        if len(configs) <= 1:
+            raise
+        raise DatasetSelectionError(
+            f"{path} has {len(configs)} configs and none is the default: {', '.join(configs)}.",
+            option="config",
+            choices=list(configs),
+        ) from None
+
+    config = builder.config.name
+    if split is None:
+        info_splits = builder.info.splits
+        splits = (
+            list(info_splits)
+            if info_splits
+            else datasets.get_dataset_split_names(path, config_name=config, revision=revision)
+        )
+        label = path if config_defaulted else f"{path} (config {config})"
+        if len(splits) == 1:
+            split = splits[0]
+        elif "train" in splits:
+            split = "train"
+        elif not splits:
+            raise DatasetSelectionError(f"{label} reports no splits.", option="split", choices=[])
+        else:
+            raise DatasetSelectionError(
+                f"{label} has {len(splits)} splits and none is named 'train': {', '.join(splits)}.",
+                option="split",
+                choices=splits,
+            )
+
+    return split, config, split_defaulted, config_defaulted
 
 
 def load_hf_dataset(
@@ -226,44 +312,167 @@ def _target_to_str(target: Any) -> str:
     return str(target) if target is not None else ""
 
 
-def load_inspect_task(task_or_fn: Any, limit: int | None = None) -> tuple[list[Record], FieldMap]:
+def detect_group_field(records: list[Record], metadata_keys: set[str]) -> str | None:
+    """The metadata key that names each sample's subset, if there is exactly one.
+
+    A candidate key qualifies when it came from ``Sample.metadata``, holds only scalar
+    values, and takes at least two distinct values. Zero or several qualifying keys mean
+    there is no single obvious subset, so the result is ``None``.
+    """
+    qualifying = []
+    for key in _GROUP_CANDIDATES:
+        if key not in metadata_keys:
+            continue
+        values = [record[key] for record in records if record.get(key) is not None]
+        if not all(isinstance(v, str | int | float | bool) for v in values):
+            continue
+        if len(set(values)) >= 2:
+            qualifying.append(key)
+    return qualifying[0] if len(qualifying) == 1 else None
+
+
+def _target_list(target: Any) -> list[str]:
+    """Every target string of an inspect_ai Sample.target value, which may be a list."""
+    if isinstance(target, list):
+        return [str(t) for t in target]
+    return [str(target)] if target is not None else []
+
+
+def _part(obj: Any, name: str) -> Any:
+    """An attribute of an inspect_ai message or content part, which may also be a dict."""
+    return obj.get(name) if isinstance(obj, dict) else getattr(obj, name, None)
+
+
+def _input_images(input: Any) -> list[Any]:
+    """Every image in an inspect_ai Sample.input, from all messages, in order.
+
+    Images take the shapes HuggingFace ``Image(decode=False)`` gives, so the image
+    scanners read them as they read an HF image column. A file path becomes
+    ``{"bytes": <file bytes>, "path": path}``, with ``None`` bytes when the file is
+    missing. A URL becomes ``{"bytes": None, "path": url}``. A data URI is kept as
+    the string.
+    """
+    if not isinstance(input, list):
+        return []
+    images: list[Any] = []
+    for msg in input:
+        content = _part(msg, "content")
+        if not isinstance(content, list):
+            continue
+        for part in content:
+            source = _part(part, "image") if _part(part, "type") == "image" else None
+            if isinstance(source, str) and source:
+                images.append(_image_value(source))
+    return images
+
+
+def _image_value(source: str) -> Any:
+    if source.startswith("data:"):
+        return source
+    if source.startswith(("http://", "https://")):
+        return {"bytes": None, "path": source}
+    try:
+        return {"bytes": Path(source).read_bytes(), "path": source}
+    except (OSError, ValueError):
+        return {"bytes": None, "path": source}
+
+
+def load_inspect_task(
+    task_or_fn: Any, limit: int | None = None, source_info: SourceInfo | None = None
+) -> tuple[list[Record], FieldMap]:
     """Load records from an inspect_ai Task object or task function.
 
     Converts each ``inspect_ai.Sample`` to a plain ``Record`` dict using the
     fixed field mapping: ``input`` → question, ``target`` → answer, ``id`` → id.
+    ``target`` is the first target string and ``targets`` holds every target
+    string. ``images`` holds every image in the input (see ``_input_images``),
+    and is an empty list on samples without one when any sample has images.
     ``choices`` and ``metadata`` are preserved in the record for scanners that
     can use them. ``files`` is stored under ``__files__`` for future use by the
     view server.
 
     Returns a ``(records, fields)`` tuple — the ``FieldMap`` is pre-set so no
-    auto-detection is needed.
+    auto-detection is needed. ``fields.group`` is set when the metadata has one obvious
+    subset key (see ``detect_group_field``).
+
+    Each record also gets the raw dataset row its sample came from under ``__source__``
+    (see ``inspect_dataset._source``), when that row can be found. Pass a ``SourceInfo``
+    as ``source_info`` to learn how many records were joined, and how.
     """
-    task = task_or_fn() if callable(task_or_fn) else task_or_fn
-    dataset = getattr(task, "dataset", None)
-    if dataset is None:
-        raise ValueError("Task has no dataset")
+    with capture_sources() as capture:
+        task = task_or_fn() if callable(task_or_fn) else task_or_fn
+        dataset = getattr(task, "dataset", None)
+        if dataset is None:
+            raise ValueError("Task has no dataset")
+        samples = list(dataset) if limit is None else list(itertools.islice(dataset, limit))
 
     records: list[Record] = []
-    for sample in dataset:
+    metadata_keys: set[str] = set()
+    sample_images: list[list[Any]] = []
+    has_choices = False
+    for sample in samples:
         record: Record = {
             "input": _input_to_str(sample.input),
             "target": _target_to_str(sample.target),
+            "targets": _target_list(sample.target),
             "id": sample.id,
         }
         if sample.choices:
             record["choices"] = sample.choices
+            has_choices = True
+        sample_images.append(_input_images(sample.input))
         if sample.metadata:
             # Merge metadata into record so scanners can access it directly
             for k, v in sample.metadata.items():
-                record.setdefault(k, v)
+                if k not in record:
+                    record[k] = v
+                    metadata_keys.add(k)
         if sample.files:
             record["__files__"] = sample.files
+        raw = capture.row_for(sample)
+        if raw is not None:
+            record[SOURCE_FIELD] = raw
         records.append(record)
-        if limit is not None and len(records) >= limit:
-            break
 
-    fields = FieldMap(question="input", answer="target", id="id")
+    info = source_info if source_info is not None else SourceInfo()
+    info.total = len(records)
+    info.joined_by_record = sum(SOURCE_FIELD in r for r in records)
+    unjoined = [i for i, r in enumerate(records) if SOURCE_FIELD not in r]
+    if unjoined:
+        info.id_column, rows = join_by_id(capture, [records[i] for i in unjoined])
+        for position, row in rows.items():
+            records[unjoined[position]][SOURCE_FIELD] = row
+        info.joined_by_id = len(rows)
+    info.loads = loads_of(capture)
+
+    has_images = any(sample_images)
+    if has_images:
+        for record, images in zip(records, sample_images, strict=True):
+            record["images"] = images
+
+    fields = FieldMap(
+        question="input",
+        answer="target",
+        id="id",
+        group=detect_group_field(records, metadata_keys),
+        image="images" if has_images else None,
+        choices="choices" if has_choices else None,
+        scorers=_scorer_names(task),
+    )
     return records, fields
+
+
+def _scorer_names(task: Any) -> list[str]:
+    """Return the registry names of a task's scorers, skipping unregistered callables."""
+    scorer = getattr(task, "scorer", None)
+    if scorer is None:
+        return []
+    scorers = scorer if isinstance(scorer, list | tuple) else [scorer]
+    try:
+        from inspect_ai._util.registry import is_registry_object, registry_info
+    except ImportError:
+        return []
+    return [registry_info(s).name for s in scorers if is_registry_object(s)]
 
 
 def _find_task_in_module(module: Any, hint: str) -> Any:
@@ -312,7 +521,77 @@ def _find_task_in_module(module: Any, hint: str) -> Any:
     )
 
 
-def load_task_from_spec(spec: str, limit: int | None = None) -> tuple[list[Record], FieldMap]:
+def _module_exists(name: str) -> bool:
+    try:
+        return importlib.util.find_spec(name) is not None
+    except (ImportError, ValueError):
+        # A parent that is missing or not a package, or an invalid module name.
+        return False
+
+
+def _registry_has_task(name: str) -> bool:
+    # registry_lookup can only find owner/x if something has already populated
+    # the registry or an inspect_ai entry point is named owner. Checking that
+    # first avoids importing inspect_ai for HuggingFace slugs.
+    owner = name.split("/", 1)[0]
+    if sys.modules.get("inspect_ai._util.registry") is None and not any(
+        ep.name == owner for ep in importlib.metadata.entry_points(group="inspect_ai")
+    ):
+        return False
+    try:
+        from inspect_ai._util.registry import registry_lookup
+    except ImportError:
+        return False
+    return registry_lookup("task", name) is not None
+
+
+def owner_is_importable(spec: str) -> bool:
+    """Return whether the part of ``spec`` before the first ``/`` is an importable module."""
+    return "/" in spec and _module_exists(spec.split("/", 1)[0])
+
+
+def is_task_spec(spec: str) -> bool:
+    """Return whether a DATASET argument names an inspect_ai task.
+
+    A spec containing ``@`` is always a task. An ``owner/name`` spec is a task
+    only when it resolves as one: the module ``owner.name`` exists, or the
+    inspect_ai registry has a task named ``owner/name`` (``inspect_evals/arc_challenge``
+    is defined in ``inspect_evals.arc``). Anything else is a HuggingFace dataset
+    path. The owner alone does not decide, because ``google`` and ``openai`` are
+    importable wherever inspect_ai is and also own HuggingFace datasets.
+
+    Callers should rule out a local directory first.
+    """
+    if "@" in spec:
+        return True
+    if not owner_is_importable(spec):
+        return False
+    owner, name = spec.split("/", 1)
+    return _module_exists(f"{owner}.{name}") or _registry_has_task(spec)
+
+
+def load_task_from_spec(
+    spec: str, limit: int | None = None, source_info: SourceInfo | None = None
+) -> tuple[list[Record], FieldMap]:
+    """Load records from a task spec string.
+
+    Accepts the same spec formats as ``inspect eval``:
+
+    - Package + task name:    ``inspect_evals/gpqa_diamond``  (mirrors inspect CLI)
+    - Module + task name:     ``inspect_evals.gpqa@gpqa_diamond``
+    - File + task name:       ``path/to/task.py@task_fn``     (via inspect_ai registry)
+
+    See ``_load_task_from_spec`` for how each form is resolved. The whole load runs inside
+    one source capture, because inspect_ai's loader builds the task before
+    ``load_inspect_task`` sees it.
+    """
+    with capture_sources():
+        return _load_task_from_spec(spec, limit=limit, source_info=source_info)
+
+
+def _load_task_from_spec(
+    spec: str, limit: int | None = None, source_info: SourceInfo | None = None
+) -> tuple[list[Record], FieldMap]:
     """Load records from a task spec string.
 
     Accepts the same spec formats as ``inspect eval``:
@@ -347,7 +626,7 @@ def load_task_from_spec(spec: str, limit: int | None = None) -> tuple[list[Recor
             except ImportError as e:
                 raise ImportError(f"Could not import module {left!r}: {e}") from e
             task_obj = _find_task_in_module(module, right)
-            return load_inspect_task(task_obj, limit=limit)
+            return load_inspect_task(task_obj, limit=limit, source_info=source_info)
 
         # file@task — delegate to inspect_ai
     else:
@@ -357,7 +636,7 @@ def load_task_from_spec(spec: str, limit: int | None = None) -> tuple[list[Recor
             try:
                 module = importlib.import_module(f"{pkg}.{task_name}")
                 task_obj = _find_task_in_module(module, task_name)
-                return load_inspect_task(task_obj, limit=limit)
+                return load_inspect_task(task_obj, limit=limit, source_info=source_info)
             except (ImportError, AttributeError, ValueError):
                 pass  # fall through to inspect_ai registry
 
@@ -377,7 +656,7 @@ def load_task_from_spec(spec: str, limit: int | None = None) -> tuple[list[Recor
             f"Spec {spec!r} matched {len(tasks)} tasks; use a more specific spec "
             f"(e.g. include the task name after @)."
         )
-    return load_inspect_task(tasks[0], limit=limit)
+    return load_inspect_task(tasks[0], limit=limit, source_info=source_info)
 
 
 def resolve_fields(

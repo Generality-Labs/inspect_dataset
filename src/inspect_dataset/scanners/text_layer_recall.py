@@ -95,6 +95,7 @@ def _scan(records: list[Record], fields: FieldMap) -> list[Finding]:
 text_layer_recall = ScannerDef(
     name="text_layer_recall",
     fn=_scan,
+    requires=["artifacts", "answer"],
     description=(
         "Cross-check gold text against cached extraction tool outputs "
         "(requires --files-root): flag gold words no tool found on the page "

@@ -77,6 +77,7 @@ def _make_scanner(model_name: str, concurrency: int = 20) -> LLMScannerDef:
     return LLMScannerDef(
         name="ambiguity",
         fn=_scan,
+        requires="answer",
         description=(
             "LLM-based scanner that flags questions which are ambiguous or "
             "underspecified — questions that can be reasonably interpreted in "

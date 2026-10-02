@@ -2,7 +2,10 @@
 
 import base64
 
+import pytest
+
 from inspect_dataset._types import FieldMap
+from inspect_dataset.scanner import ScannerNotApplicable, run_scanners
 from inspect_dataset.scanners.image_mime_type import (
     detect_mime_from_bytes,
     image_mime_type,
@@ -120,10 +123,16 @@ def test_mismatch_png_declared_jpeg_actual():
     assert findings[0].metadata["actual_mime"] == "image/jpeg"
 
 
-def test_no_image_field_no_findings():
-    """Scanner returns nothing when FieldMap has no image field."""
+def test_no_image_field_not_applicable():
     records = [{"q": "What?", "a": "Yes"}]
-    assert image_mime_type(records, FIELDS_NO_IMAGE) == []
+    run = run_scanners(records, FIELDS_NO_IMAGE, [image_mime_type])
+    assert run.findings == []
+    assert run.scanner_status["image_mime_type"]["status"] == "not_applicable"
+
+
+def test_direct_call_without_image_field_raises_not_applicable():
+    with pytest.raises(ScannerNotApplicable, match="no image field"):
+        image_mime_type([{"q": "What?", "a": "Yes"}], FIELDS_NO_IMAGE)
 
 
 def test_none_image_skipped():
@@ -189,3 +198,42 @@ def test_sample_id_from_id_field():
     findings = image_mime_type(records, fields)
     assert len(findings) == 1
     assert findings[0].sample_id == "hle_91e88c21"
+
+
+# -- list-valued image fields (task mode collects every image of a sample) ---
+
+
+def test_list_field_reports_each_mismatched_image_with_its_index():
+    records = [
+        {
+            "q": "Compare",
+            "a": "A",
+            "img": [
+                _hf_image(PNG_HEADER, "one.png"),
+                _hf_image(PNG_HEADER, "two.jpg"),
+                "data:image/gif;base64," + base64.b64encode(JPEG_HEADER).decode(),
+            ],
+        }
+    ]
+    findings = image_mime_type(records, FIELDS)
+    assert [(f.sample_index, f.metadata["image_index"]) for f in findings] == [(0, 1), (0, 2)]
+    assert findings[1].metadata["declared_mime"] == "image/gif"
+    assert findings[1].metadata["actual_mime"] == "image/jpeg"
+
+
+def test_list_field_skips_images_without_bytes():
+    records = [
+        {
+            "q": "Q",
+            "a": "A",
+            "img": [{"bytes": None, "path": "https://example.com/x.jpg"}, None],
+        }
+    ]
+    assert image_mime_type(records, FIELDS) == []
+
+
+def test_scalar_field_findings_have_no_image_index():
+    records = [{"q": "Q", "a": "A", "img": _hf_image(PNG_HEADER, "x.jpg")}]
+    findings = image_mime_type(records, FIELDS)
+    assert len(findings) == 1
+    assert "image_index" not in findings[0].metadata

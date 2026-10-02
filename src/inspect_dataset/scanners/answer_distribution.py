@@ -1,57 +1,103 @@
 from __future__ import annotations
 
 from collections import Counter
+from typing import Any
 
 from inspect_dataset._types import FieldMap, Finding, Record
 from inspect_dataset.scanner import ScannerDef
+from inspect_dataset.scanners._answers import (
+    CHOICE_TEXT_NOTE,
+    choice_letters,
+    resolved_scalar_answer,
+)
+from inspect_dataset.scanners._groups import (
+    MIN_GROUP_SIZE,
+    group_label,
+    group_metadata,
+    population_groups,
+)
 
 _IMBALANCE_THRESHOLD = 0.85  # flag if one answer accounts for ≥85% of all answers
 
 
 def _scan(records: list[Record], fields: FieldMap) -> list[Finding]:
-    answers = [str(record.get(fields.answer, "") or "").strip().lower() for record in records]
-    non_empty = [a for a in answers if a]
-    if not non_empty:
-        return []
+    # Letter targets are measured as the choice text they name, and separately as letters
+    letters = choice_letters(records, fields)
+    measured = "choice_text" if any(letters) else None
+    answers = [
+        str(resolved_scalar_answer(record, fields) or "").strip().lower() for record in records
+    ]
+    findings: list[Finding | None] = [
+        _check(non_empty, fields, group, measured)
+        for group, non_empty in population_groups(records, fields, "answer_distribution", answers)
+    ]
+    if measured is not None:
+        findings += [
+            _check(non_empty, fields, group, "letter")
+            for group, non_empty in population_groups(
+                records, fields, "answer_distribution", letters
+            )
+        ]
+    return [f for f in findings if f is not None]
 
+
+def _check(
+    non_empty: list[str], fields: FieldMap, group: Any, measured: str | None
+) -> Finding | None:
     counts = Counter(non_empty)
     total = len(non_empty)
     most_common_answer, most_common_count = counts.most_common(1)[0]
     fraction = most_common_count / total
 
     if fraction < _IMBALANCE_THRESHOLD:
-        return []
+        return None
 
-    # One finding at the dataset level (index -1, no sample_id)
-    return [
-        Finding(
-            scanner="answer_distribution",
-            severity="high",
-            category="distribution",
-            explanation=(
-                f"Dataset is heavily imbalanced: {most_common_count}/{total} samples "
-                f"({fraction:.0%}) have the answer {most_common_answer!r}. "
-                f"A model that always predicts {most_common_answer!r} would score "
-                f"{fraction:.0%} without understanding the questions."
-            ),
-            sample_index=-1,
-            sample_id=None,
-            metadata={
-                "most_common_answer": most_common_answer,
-                "most_common_count": most_common_count,
-                "total": total,
-                "fraction": round(fraction, 4),
-                "top_10": counts.most_common(10),
-            },
+    share = f"{most_common_count}/{total} samples ({fraction:.0%})"
+    if measured == "letter":
+        where = "" if fields.group is None else f" in group {group_label(fields, group)}"
+        explanation = (
+            f"Answer positions{where} are heavily imbalanced: {share} have the target letter "
+            f"{most_common_answer!r}. A model that always picks choice {most_common_answer!r} "
+            f"would score {fraction:.0%} without understanding the questions."
         )
-    ]
+    else:
+        subject = "Dataset" if fields.group is None else f"Group {group_label(fields, group)}"
+        note = f", {CHOICE_TEXT_NOTE}" if measured == "choice_text" else ""
+        explanation = (
+            f"{subject} is heavily imbalanced: {share} have the answer "
+            f"{most_common_answer!r}{note}. "
+            f"A model that always predicts {most_common_answer!r} would score "
+            f"{fraction:.0%} without understanding the questions."
+        )
+
+    # One finding at the dataset or group level (index -1, no sample_id)
+    return Finding(
+        scanner="answer_distribution",
+        severity="high",
+        category="distribution",
+        explanation=explanation,
+        sample_index=-1,
+        sample_id=None,
+        metadata={
+            "most_common_answer": most_common_answer,
+            "most_common_count": most_common_count,
+            "total": total,
+            "fraction": round(fraction, 4),
+            "top_10": counts.most_common(10),
+            **({"measured": measured} if measured else {}),
+            **group_metadata(fields, group),
+        },
+    )
 
 
 answer_distribution = ScannerDef(
     name="answer_distribution",
     fn=_scan,
+    requires="answer",
     description=(
         f"Flag datasets where a single answer accounts for ≥{_IMBALANCE_THRESHOLD:.0%} "
-        "of all samples (class imbalance)."
+        "of all samples (class imbalance). Letter targets are measured as the choice text "
+        "they name, and as letters for answer-position bias. With grouping, each group of "
+        f"at least {MIN_GROUP_SIZE} samples is checked on its own."
     ),
 )

@@ -138,6 +138,7 @@ def _make_scanner(model_name: str, concurrency: int = 20) -> LLMScannerDef:
     return LLMScannerDef(
         name="answerability",
         fn=_scan,
+        requires="answer",
         description=(
             "LLM-based scanner that flags questions which cannot be answered "
             "from the provided context alone. Unanswerable questions with "

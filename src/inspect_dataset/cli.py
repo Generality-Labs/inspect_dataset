@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import dataclasses
 import re
 from datetime import UTC, datetime
 from pathlib import Path
@@ -8,11 +9,17 @@ import click
 from dotenv import load_dotenv
 from rich.console import Console
 
+from inspect_dataset._source import SOURCE_FIELD, SourceInfo
+from inspect_dataset._types import Record
 from inspect_dataset.loader import (
+    DatasetSelectionError,
+    is_task_spec,
     load_hf_dataset,
     load_local_samples,
     load_task_from_spec,
+    owner_is_importable,
     resolve_fields,
+    resolve_hf_split_config,
 )
 from inspect_dataset.report import print_report, save_findings
 from inspect_dataset.scanner import (
@@ -64,6 +71,32 @@ def _load_scanner_module(module_name: str) -> list[ScannerDef]:
     return defs
 
 
+_SOURCE_PREFIX = "source."
+
+
+def _copy_source_columns(records: list[Record], names: list[str | None]) -> None:
+    """Copy each ``source.<column>`` option value out of the raw rows into the records.
+
+    Task records keep their raw dataset row under ``__source__``. Naming ``source.<column>``
+    in a field option or ``--group-by`` copies that column to a record field of that name,
+    so every scanner can use it.
+    """
+    for name in dict.fromkeys(n for n in names if n and n.startswith(_SOURCE_PREFIX)):
+        column = name[len(_SOURCE_PREFIX) :]
+        rows = [r[SOURCE_FIELD] for r in records if SOURCE_FIELD in r]
+        if not any(column in row for row in rows):
+            available = sorted({c for row in rows for c in row})
+            hint = (
+                f"Source columns: {', '.join(available)}"
+                if available
+                else "No sample was joined to a source row"
+            )
+            raise click.BadParameter(f"{column!r} is not a column of any source row. {hint}.")
+        for record in records:
+            if SOURCE_FIELD in record:
+                record[name] = record[SOURCE_FIELD].get(column)
+
+
 @click.group()
 def cli() -> None:
     """inspect-dataset — dataset quality scanner for AI evaluation benchmarks."""
@@ -75,22 +108,48 @@ def cli() -> None:
 
 @cli.command()
 @click.argument("dataset")
-@click.option("--split", default="train", show_default=True, help="Dataset split to load.")
+@click.option(
+    "--split",
+    default=None,
+    help=(
+        "HF dataset split to load. Defaults to the only split, or to 'train' when there are "
+        "several. Required when there are several splits and none is 'train'."
+    ),
+)
 @click.option("--revision", default=None, help="Dataset revision / commit SHA to pin.")
 @click.option(
     "--config",
     default=None,
-    help="HF config/subset name (required for multi-config datasets, e.g. a specific subset).",
+    help=(
+        "HF config/subset name. Defaults to the only config or the default one. "
+        "Required when the dataset has several configs and no default."
+    ),
 )
 @click.option(
     "--question-field",
     default=None,
-    help="Column name for questions (auto-detected if omitted).",
+    help=(
+        "Column name for questions (auto-detected if omitted). For a task, "
+        "'source.<column>' names a column of the raw dataset row."
+    ),
 )
 @click.option(
     "--answer-field",
     default=None,
-    help="Column name for answers (auto-detected if omitted).",
+    help=(
+        "Column name for answers (auto-detected if omitted). For a task, "
+        "'source.<column>' names a column of the raw dataset row."
+    ),
+)
+@click.option(
+    "--answer-subfield",
+    default=None,
+    help=(
+        "Dotted path to the scalar inside a list or struct answer column, for answer_length "
+        "and inconsistent_format (e.g. 'sentence' for StereoSet's sentences column). Lists "
+        "along the path are measured element by element; '*' measures each element of a "
+        "list of strings. Without it those scanners report the column as not applicable."
+    ),
 )
 @click.option(
     "--id-field",
@@ -102,8 +161,28 @@ def cli() -> None:
     default=None,
     help=(
         "Column name for images. Used by duplicate_questions to distinguish "
-        "same-question/different-image pairs from true duplicates."
+        "same-question/different-image pairs from true duplicates, and by "
+        "image_mime_type. Task scans set it to 'images' when the input has images."
     ),
+)
+@click.option(
+    "--group-by",
+    default=None,
+    metavar="FIELD",
+    help=(
+        "Record field that names each sample's subset (e.g. a metadata key such as "
+        "'subject'). inconsistent_format, answer_distribution and binary_question_ratio "
+        "then compute their statistics per subset instead of over the whole dataset. "
+        "In task mode the subset key is detected from the sample metadata when exactly "
+        "one of dataset_name, subset, subject or category has two or more values. "
+        "'source.<column>' groups by a column of the raw dataset row."
+    ),
+)
+@click.option(
+    "--no-group-by",
+    is_flag=True,
+    default=False,
+    help="Do not group by a subset key detected from task metadata.",
 )
 @click.option(
     "--scanners",
@@ -163,13 +242,16 @@ def cli() -> None:
 )
 def scan(
     dataset: str,
-    split: str,
+    split: str | None,
     revision: str | None,
     config: str | None,
     question_field: str | None,
     answer_field: str | None,
+    answer_subfield: str | None,
     id_field: str | None,
     image_field: str | None,
+    group_by: str | None,
+    no_group_by: bool,
     scanners: str | None,
     scanner_modules: tuple[str, ...],
     model: str | None,
@@ -190,6 +272,9 @@ def scan(
       - A local annotation directory:  path/to/data/samples/
     """
     console = Console()
+
+    if group_by is not None and no_group_by:
+        raise click.UsageError("--group-by and --no-group-by cannot be used together.")
 
     # Plugin scanners from --scanner-module
     plugin_scanners: list[ScannerDef] = []
@@ -239,19 +324,14 @@ def scan(
             for s in scanner_list
         ]
 
-    # Detect the source type.
-    # - An existing directory → local annotation directory
-    # - "@" present → always a task spec (module@fn or file@fn)
-    # - "package/task" with no "@" → task if "package" is an installed Python
-    #   package (importlib.util.find_spec returns non-None); HF slugs like
-    #   "owner/dataset" have no corresponding Python package.
-    import importlib.util as _ilu
-
+    # An existing directory is local samples. Otherwise is_task_spec decides
+    # between an inspect_ai task and a HuggingFace dataset path.
     is_local = Path(dataset).is_dir()
-    is_task = not is_local and (
-        "@" in dataset or ("/" in dataset and _ilu.find_spec(dataset.split("/")[0]) is not None)
-    )
+    is_task = not is_local and is_task_spec(dataset)
     resolved_split: str | None = split
+    split_defaulted: bool | None = None
+    config_defaulted: bool | None = None
+    source_info: SourceInfo | None = None
 
     if is_local:
         dataset = str(Path(dataset).resolve())
@@ -260,19 +340,69 @@ def scan(
         resolved_split = None
         if question_field or answer_field or id_field:
             fields = resolve_fields(records, question_field, answer_field, id_field, image_field)
+        elif image_field:
+            fields.image = image_field
     elif is_task:
         console.print(f"Loading inspect_ai task [bold]{dataset}[/bold]...")
-        records, fields = load_task_from_spec(dataset, limit=limit)
-        # Allow field overrides even on the task path
-        if question_field or answer_field or id_field:
-            fields = resolve_fields(records, question_field, answer_field, id_field, image_field)
-    else:
-        config_msg = f" config=[bold]{config}[/bold]" if config else ""
-        console.print(f"Loading [bold]{dataset}[/bold] split=[bold]{split}[/bold]{config_msg}...")
-        records = load_hf_dataset(
-            dataset, split=split, revision=revision, limit=limit, config=config
+        source_info = SourceInfo()
+        records, fields = load_task_from_spec(dataset, limit=limit, source_info=source_info)
+        _copy_source_columns(
+            records, [question_field, answer_field, id_field, image_field, group_by]
         )
+        # Overrides replace only the roles given, so the rest of the task's field map stays
+        overrides = {
+            role: value
+            for role, value in (
+                ("question", question_field),
+                ("answer", answer_field),
+                ("id", id_field),
+                ("image", image_field),
+            )
+            if value
+        }
+        fields = dataclasses.replace(fields, **overrides)
+    else:
+        from datasets.exceptions import DatasetNotFoundError
+
+        try:
+            resolved_split, config, split_defaulted, config_defaulted = resolve_hf_split_config(
+                dataset, split, config, revision
+            )
+            config_msg = f" config=[bold]{config}[/bold]" if config else ""
+            console.print(
+                f"Loading [bold]{dataset}[/bold] split=[bold]{resolved_split}[/bold]{config_msg}..."
+            )
+            records = load_hf_dataset(
+                dataset, split=resolved_split, revision=revision, limit=limit, config=config
+            )
+        except DatasetSelectionError as e:
+            raise click.UsageError(f"{e} Choose one with --{e.option}.") from None
+        except DatasetNotFoundError as e:
+            # The owner is a Python package, so the user may have meant a task.
+            if not owner_is_importable(dataset):
+                raise
+            raise click.ClickException(
+                f"{dataset!r} is not an inspect_ai task, and loading it as a "
+                f"HuggingFace dataset failed: {e}"
+            ) from e
         fields = resolve_fields(records, question_field, answer_field, id_field, image_field)
+
+    if answer_subfield is not None:
+        fields.answer_subfield = answer_subfield
+
+    group_by_source: str | None = "auto" if fields.group is not None else None
+    if no_group_by:
+        fields.group = None
+        group_by_source = None
+    elif group_by is not None:
+        if not any(group_by in record for record in records):
+            keys = sorted({k for r in records for k in r if not k.startswith("__")})
+            raise click.BadParameter(
+                f"Field {group_by!r} is not in any record. Available: {', '.join(keys)}",
+                param_hint="--group-by",
+            )
+        fields.group = group_by
+        group_by_source = "option"
 
     if files_root is not None:
         from inspect_dataset.scanner import get_sample_id as _gsid
@@ -292,7 +422,9 @@ def scan(
     console.print(
         f"  Fields: question=[bold]{fields.question}[/bold]  "
         f"answer=[bold]{fields.answer}[/bold]"
+        + (f".[bold]{fields.answer_subfield}[/bold]" if fields.answer_subfield else "")
         + (f"  id=[bold]{fields.id}[/bold]" if fields.id else "")
+        + (f"  image=[bold]{fields.image}[/bold]" if fields.image else "")
     )
 
     all_scanners = scanner_list + llm_scanners
@@ -305,6 +437,7 @@ def scan(
 
     source_type = "local" if is_local else ("inspect_task" if is_task else "hf")
     resolved_config = config if source_type == "hf" else None
+    task_spec = dataset if is_task else None
 
     if llm_scanners:
         import asyncio
@@ -319,6 +452,8 @@ def scan(
                 source_type=source_type,
                 revision=revision,
                 config=resolved_config,
+                group_by_source=group_by_source,
+                task=task_spec,
             )
         )
     else:
@@ -331,7 +466,13 @@ def scan(
             source_type=source_type,
             revision=revision,
             config=resolved_config,
+            group_by_source=group_by_source,
+            task=task_spec,
         )
+
+    run.split_defaulted = split_defaulted
+    run.config_defaulted = config_defaulted
+    run.source = source_info.to_summary() if source_info is not None else None
 
     print_report(run, console=console)
 
@@ -403,14 +544,15 @@ def list_scanners() -> None:
     table = Table(title="Registered Scanners")
     table.add_column("Scanner", style="bold")
     table.add_column("Type")
+    table.add_column("Requires")
     table.add_column("Description")
 
     for s in BUILTIN_SCANNERS:
-        table.add_row(s.name, "static", s.description)
+        table.add_row(s.name, "static", ", ".join(s.requires), s.description)
     for name, factory in LLM_SCANNER_FACTORIES.items():
         # Build a temporary instance to read its description
-        desc = factory("_placeholder").description
-        table.add_row(name, "llm", desc)
+        llm = factory("_placeholder")
+        table.add_row(name, "llm", ", ".join(llm.requires), llm.description)
 
     console.print(table)
 
