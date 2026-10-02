@@ -54,6 +54,12 @@ packages = ["src/inspect_dataset"]
 [tool.hatch.build.targets.sdist]
 only-include = ["src/inspect_dataset", "README.md", "LICENSE"]
 
+[tool.uv]
+# uv rebuilds the editable install only when a cache key changes. The version
+# lives in __init__.py, so it must be a key too, or a version bump leaves the
+# installed metadata (and scan_summary.json's version) on the old value.
+cache-keys = [{ file = "pyproject.toml" }, { file = "src/inspect_dataset/__init__.py" }]
+
 [tool.scriv]
 # One fragment per pull request in changelog.d/, collected into CHANGELOG.md
 # at release time, so concurrent PRs never edit the same lines of the changelog.

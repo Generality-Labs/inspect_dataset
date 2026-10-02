@@ -214,9 +214,9 @@ Releases publish to PyPI via [trusted publishing](https://docs.pypi.org/trusted-
 `main` is protected, so a release goes through a pull request and the tag is pushed after it merges:
 
 ```bash
-V=0.4.0                      # the version being released
 git switch -c release
-# set __version__ = "$V" in src/inspect_dataset/__init__.py (pyproject.toml reads it)
+uvx hatch version minor      # or patch / major; sets __version__ in src/inspect_dataset/__init__.py
+V=$(uvx hatch version)
 uv run scriv collect         # writes changelog.d/ fragments into CHANGELOG.md
 git commit -am "Release $V"
 gh pr create --fill          # merge it once CI passes, then:
@@ -224,6 +224,8 @@ git switch main && git pull
 git tag "v$V"
 git push origin "v$V"
 ```
+
+For 0.4.0, the first release, skip the bump: `__init__.py` already says 0.4.0.
 
 The tag push triggers `.github/workflows/release.yml`, which builds with `uv build`, checks the tag against the built wheel's version, and publishes.
 
