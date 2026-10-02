@@ -80,7 +80,7 @@ shipped in the repository and included in the package.
 1. Install development dependencies:
 
 ```bash
-uv sync --extra dev
+uv sync                     # the dev group is installed by default
 ````
 
 1. Return to the repository root and generate a findings directory if you do not already have one:
@@ -213,7 +213,8 @@ Releases publish to PyPI via [trusted publishing](https://docs.pypi.org/trusted-
 
 ```bash
 uv version --bump minor      # or: patch / major — updates pyproject.toml
-git commit -am "Release $(uv version --short)"
+uv run scriv collect         # writes changelog.d/ fragments into CHANGELOG.md
+git add -A && git commit -m "Release $(uv version --short)"
 git tag "v$(uv version --short)"
 git push origin main "v$(uv version --short)"
 ```
@@ -223,9 +224,11 @@ The tag push triggers `.github/workflows/release.yml`, which checks the tag agai
 ## Development
 
 ```bash
-uv sync --extra dev
+uv sync                     # the dev group is installed by default
 uv run pytest
 ```
+
+Each pull request adds a changelog fragment rather than editing `CHANGELOG.md`, so concurrent PRs don't conflict. Run `uv run scriv create`, uncomment the sections that apply in the new file under `changelog.d/`, and commit it with the change. Fragments are collected into `CHANGELOG.md` at release time.
 
 If you are working on the interactive viewer itself, also install frontend dependencies and build the bundle:
 

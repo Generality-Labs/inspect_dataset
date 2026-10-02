@@ -44,6 +44,21 @@ build-backend = "uv_build"
 source-exclude = ["**/node_modules/**"]
 wheel-exclude = ["**/node_modules/**"]
 
+[tool.scriv]
+# One fragment per pull request in changelog.d/, collected into CHANGELOG.md
+# at release time, so concurrent PRs never edit the same lines of the changelog.
+format = "md"
+fragment_directory = "changelog.d"
+categories = ["Added", "Changed", "Deprecated", "Removed", "Fixed", "Security"]
+skip_fragments = "[A-Z]*" # TEMPLATE.md
+new_fragment_template = "file: TEMPLATE.md"
+entry_title_template = "[{{ version }}] - {{ date.strftime('%Y-%m-%d') }}"
+md_header_level = "2"
+md_html_anchors = false
+# pyproject.toml, not __init__.py: uv_build reads the version from here, and
+# __init__.__version__ has not tracked it.
+version = "literal: pyproject.toml: project.version"
+
 [tool.ruff]
 line-length = 100
 src = ["src"]
@@ -121,6 +136,7 @@ dev = [
     "pytest-asyncio>=1.4.0",
     "pytest-playwright>=0.8.0",
     "ruff>=0.16.2",
+    "scriv>=1.8",
     "watchfiles>=0.21",
     "basedpyright>=1.39",
 ]
