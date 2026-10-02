@@ -1,6 +1,6 @@
 [project]
 name = "inspect-dataset"
-dynamic = ["version"]
+version = "0.4.0"
 description = "Dataset quality scanner for AI evaluation datasets"
 readme = "README.md"
 license = "MIT"
@@ -35,30 +35,14 @@ inspect = [
 ]
 
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["uv_build>=0.12.3,<0.13.0"]
+build-backend = "uv_build"
 
-# hatchling rather than uv_build: uv_build needs a static version, and the
-# version's single source is __version__ in src/inspect_dataset/__init__.py.
-[tool.hatch.version]
-path = "src/inspect_dataset/__init__.py"
-
-[tool.hatch.build]
+[tool.uv.build-backend]
 # The viewer frontend ships only as its built bundle (_view/www/dist);
 # node_modules must never reach the sdist or wheel.
-exclude = ["**/node_modules"]
-
-[tool.hatch.build.targets.wheel]
-packages = ["src/inspect_dataset"]
-
-[tool.hatch.build.targets.sdist]
-only-include = ["src/inspect_dataset", "README.md", "LICENSE"]
-
-[tool.uv]
-# uv rebuilds the editable install only when a cache key changes. The version
-# lives in __init__.py, so it must be a key too, or a version bump leaves the
-# installed metadata (and scan_summary.json's version) on the old value.
-cache-keys = [{ file = "pyproject.toml" }, { file = "src/inspect_dataset/__init__.py" }]
+source-exclude = ["**/node_modules/**"]
+wheel-exclude = ["**/node_modules/**"]
 
 [tool.scriv]
 # One fragment per pull request in changelog.d/, collected into CHANGELOG.md
@@ -74,7 +58,9 @@ md_html_anchors = false
 # Without this, two fragments in one category leave a blank line between them,
 # which makes the list loose and fails mdformat on the release commit.
 compact_fragments = true
-version = "literal: src/inspect_dataset/__init__.py: __version__"
+# The version's single source is [project] version above, managed with
+# `uv version`; __version__ reads it back from the installed metadata.
+version = "literal: pyproject.toml: project.version"
 
 [tool.ruff]
 line-length = 100

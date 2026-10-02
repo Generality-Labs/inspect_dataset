@@ -6,8 +6,7 @@ name: Release
 # environment: pypi) at https://pypi.org/manage/account/publishing/.
 #
 # Release flow:
-#   1. in a release PR: set __version__ in src/inspect_dataset/__init__.py
-#      (pyproject.toml reads it) and run `uv run scriv collect`
+#   1. in a release PR: `uv version --bump ...` and `uv run scriv collect`
 #   2. after it merges: git tag vX.Y.Z && git push origin vX.Y.Z
 
 on:
@@ -45,8 +44,8 @@ jobs:
       - name: Build sdist and wheel
         run: uv build
 
-      # Checks the version of the wheel about to be uploaded. The version is
-      # dynamic (read from __init__.py), which `uv version` cannot report.
+      # Checks the version of the wheel about to be uploaded, which is what
+      # PyPI will receive.
       - name: Check tag matches package version
         run: |
           shopt -s nullglob
