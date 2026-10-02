@@ -80,7 +80,7 @@ shipped in the repository and included in the package.
 1. Install development dependencies:
 
 ```bash
-uv sync --extra dev
+uv sync                     # the dev group is installed by default
 ````
 
 1. Return to the repository root and generate a findings directory if you do not already have one:
@@ -211,11 +211,17 @@ inspect-scout tracks which samples models consistently fail or succeed on. inspe
 
 Releases publish to PyPI via [trusted publishing](https://docs.pypi.org/trusted-publishers/) — no API tokens. One-time setup: add a Trusted Publisher on PyPI for `Generality-Labs/inspect_dataset`, workflow `release.yml`, environment `pypi`.
 
+`main` is protected, so a release goes through a pull request and the tag is pushed after it merges:
+
 ```bash
+git switch -c release
 uv version --bump minor      # or: patch / major — updates pyproject.toml
+uv run scriv collect         # writes changelog.d/ fragments into CHANGELOG.md
 git commit -am "Release $(uv version --short)"
+gh pr create --fill          # merge it once CI passes, then:
+git switch main && git pull
 git tag "v$(uv version --short)"
-git push origin main "v$(uv version --short)"
+git push origin "v$(uv version --short)"
 ```
 
 The tag push triggers `.github/workflows/release.yml`, which checks the tag against the package version, builds with `uv build`, and publishes.
@@ -223,9 +229,11 @@ The tag push triggers `.github/workflows/release.yml`, which checks the tag agai
 ## Development
 
 ```bash
-uv sync --extra dev
+uv sync                     # the dev group is installed by default
 uv run pytest
 ```
+
+Each pull request adds a changelog fragment rather than editing `CHANGELOG.md`, so concurrent PRs don't conflict. Run `uv run scriv create`, uncomment the sections that apply in the new file under `changelog.d/`, and commit it with the change, or delete it if the change needs no entry. At release time, bump the version and run `uv run scriv collect`, which writes the fragments into `CHANGELOG.md` under the new version and deletes them.
 
 If you are working on the interactive viewer itself, also install frontend dependencies and build the bundle:
 

@@ -7,7 +7,8 @@ name: Release
 #
 # Release flow:
 #   1. bump `version` in pyproject.toml (and src/inspect_dataset/__init__.py if present)
-#   2. tag: git tag vX.Y.Z && git push origin vX.Y.Z
+#   2. uv run scriv collect, to write the changelog.d/ fragments into CHANGELOG.md
+#   3. tag: git tag vX.Y.Z && git push origin vX.Y.Z
 
 on:
   push:
