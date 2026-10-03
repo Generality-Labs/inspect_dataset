@@ -8,6 +8,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [0.5.0] - 2026-10-03
 
+The first release on PyPI. 0.4.0 was never published, so this section covers everything since 0.3.4. It covers:
+
+- a dataset explorer in the viewer, with scanners you can run from it;
+- local annotation directories, with markdown and cross-artifact scanners for auditing ground truth;
+- scanners loaded from other modules with `--scanner-module`;
+- many accuracy fixes for scans of real evaluation datasets.
+
 ### Added
 
 - `image_mime_type` scanner: flags images whose declared MIME type, from a path's file extension or a data URI's header, does not match the image data, from its magic bytes. It catches images declared as JPEG that are really WebP or PNG, which some model APIs reject with HTTP 400. It reads HuggingFace image dicts, data URIs, raw bytes and base64. Raw bytes and plain base64 declare no type, so they are never flagged. It runs by default.
