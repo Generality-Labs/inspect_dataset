@@ -3,7 +3,7 @@
 A dataset quality scanner for AI evaluation datasets. Companion to [inspect-scout](https://github.com/meridian-labs/inspect-scout), which scans agent trajectories — inspect-dataset scans the underlying datasets themselves.
 
 **Organisation:** Arcadia\
-**Status:** v0.4 and v0.6.3 in progress. Nothing is on PyPI yet; the first release will be 0.4.0.
+**Status:** v0.4 and v0.6.3 in progress. Nothing is on PyPI yet.
 
 ______________________________________________________________________
 
@@ -83,7 +83,7 @@ ______________________________________________________________________
 
 ## Phased Roadmap
 
-The `vX.Y` labels below name roadmap milestones, not package versions, and they have drifted apart. The first published release, 0.4.0, contains milestones v0.1 to v0.4.0, v0.6.0 and v0.6.1, the first slices of v0.4.2 (running scanners from the explorer) and v0.6.3, and scanner work that has no milestone here; `CHANGELOG.md` records what each release actually contains. v0.6.4 below asks for its audit-contract pass to land, or be consciously rejected, before the first PyPI release containing v0.6, which 0.4.0 is.
+The `vX.Y` labels below name roadmap milestones, not package versions, and they have drifted apart. The first published release contains milestones v0.1 to v0.4.0, v0.6.0 and v0.6.1, the first slices of v0.4.2 (running scanners from the explorer) and v0.6.3, and scanner work that has no milestone here; `CHANGELOG.md` records what each release actually contains. v0.6.4 below asks for its audit-contract pass to land, or be consciously rejected, before the first PyPI release containing v0.6, which will be the first release.
 
 ### v0.1 — Static scanners, CLI, JSON + markdown output ✓
 
