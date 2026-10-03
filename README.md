@@ -215,7 +215,7 @@ Releases publish to PyPI via [trusted publishing](https://docs.pypi.org/trusted-
 2. On that pull request's Checks tab, click **Approve workflows to run**, then review it. Add a summary paragraph under the new heading if the release needs one.
 3. Merge it. **Release on merge** tags the merge commit, creates the GitHub release, and starts `publish.yml`, which checks the tag against the built wheel and uploads to PyPI.
 
-The workflows are thin callers of [python-project-template](https://github.com/Generality-Labs/python-project-template)'s reusable ones. By hand, the same is `uv version --bump minor`, `uv run scriv collect`, a pull request, and then `git tag vX.Y.Z && git push origin vX.Y.Z` on the merge commit, which starts `publish.yml`.
+The workflows are thin callers of [python-project-template](https://github.com/Generality-Labs/python-project-template)'s reusable ones. By hand, the same is `uv version --bump minor`, `uv run scriv collect`, a pull request, and then `git tag vX.Y.Z && git push origin vX.Y.Z` on the merge commit, which starts `publish.yml`, plus `gh release create vX.Y.Z` for the GitHub release.
 
 ## Development
 
