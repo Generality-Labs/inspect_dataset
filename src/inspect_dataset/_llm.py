@@ -61,36 +61,69 @@ async def judge_batch(
     from inspect_ai.model import ChatMessageSystem, ChatMessageUser
 
     sem = asyncio.Semaphore(concurrency)
-
-    system_msg = ChatMessageSystem(
-        content=(
-            "You are a dataset quality auditor. Answer each question about an "
-            "evaluation dataset sample. Always start your response with exactly "
-            "YES or NO on the first line, then provide a brief explanation on "
-            "the following lines."
-        ),
-    )
+    system_msg = ChatMessageSystem(content=_AUDITOR_SYSTEM)
 
     async def _judge_one(prompt: str) -> LLMJudgment:
         async with sem:
-            try:
-                result = await model.generate([system_msg, ChatMessageUser(content=prompt)])
-                text = result.completion.strip()
-                first_line = text.split("\n")[0].strip().upper()
-                flagged = first_line.startswith("YES")
-                reasoning = "\n".join(text.split("\n")[1:]).strip()
-                return LLMJudgment(
-                    flagged=flagged,
-                    reasoning=reasoning,
-                    raw_response=text,
-                )
-            except Exception as e:
-                logger.warning("LLM call failed: %s", e)
-                return LLMJudgment(
-                    flagged=False,
-                    reasoning=f"LLM call failed: {e}",
-                    raw_response="",
-                )
+            return await _generate_judgment(model, [system_msg, ChatMessageUser(content=prompt)])
 
     tasks = [_judge_one(p) for p in prompts]
     return list(await asyncio.gather(*tasks))
+
+
+async def judge_batch_vision(
+    model: Any,
+    prompts: list[str],
+    images: list[bytes | None],
+    concurrency: int = DEFAULT_CONCURRENCY,
+) -> list[LLMJudgment]:
+    """Like ``judge_batch`` but attaches a page image to each prompt.
+
+    ``images`` is aligned with ``prompts``; an entry may be ``None`` (the prompt
+    is then sent text-only). Image bytes are base64-encoded into a data URL and
+    sent as an ``image`` content block ahead of the prompt text.
+    """
+    import base64
+
+    from inspect_ai.model import (
+        ChatMessageSystem,
+        ChatMessageUser,
+        ContentImage,
+        ContentText,
+    )
+
+    sem = asyncio.Semaphore(concurrency)
+    system_msg = ChatMessageSystem(content=_AUDITOR_SYSTEM)
+
+    async def _judge_one(prompt: str, image: bytes | None) -> LLMJudgment:
+        async with sem:
+            if image is None:
+                content: Any = prompt
+            else:
+                data_url = "data:image/png;base64," + base64.b64encode(image).decode("ascii")
+                content = [ContentImage(image=data_url), ContentText(text=prompt)]
+            return await _generate_judgment(model, [system_msg, ChatMessageUser(content=content)])
+
+    tasks = [_judge_one(p, img) for p, img in zip(prompts, images, strict=True)]
+    return list(await asyncio.gather(*tasks))
+
+
+_AUDITOR_SYSTEM = (
+    "You are a dataset quality auditor. Answer each question about an "
+    "evaluation dataset sample. Always start your response with exactly "
+    "YES or NO on the first line, then provide a brief explanation on "
+    "the following lines."
+)
+
+
+async def _generate_judgment(model: Any, messages: list[Any]) -> LLMJudgment:
+    try:
+        result = await model.generate(messages)
+        text = result.completion.strip()
+        first_line = text.split("\n")[0].strip().upper()
+        flagged = first_line.startswith("YES")
+        reasoning = "\n".join(text.split("\n")[1:]).strip()
+        return LLMJudgment(flagged=flagged, reasoning=reasoning, raw_response=text)
+    except Exception as e:
+        logger.warning("LLM call failed: %s", e)
+        return LLMJudgment(flagged=False, reasoning=f"LLM call failed: {e}", raw_response="")

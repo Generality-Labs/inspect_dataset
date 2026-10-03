@@ -49,6 +49,30 @@ def tool_texts(record: Record) -> dict[str, str]:
     return texts
 
 
+_PAGE_IMAGE_NAMES = ("page.png", "page.jpg", "page.jpeg", "page.webp")
+
+
+def page_image(record: Record) -> bytes | None:
+    """Read the rendered page image from a record's artifacts directory.
+
+    The extraction cache writes one ``page.<ext>`` per sample; vision scanners
+    read it via ``--files-root`` (which sets ``__artifacts_dir__``). Returns
+    ``None`` when the record has no artifacts dir or no page image on disk.
+    """
+    artifacts_dir = record.get("__artifacts_dir__")
+    if not artifacts_dir:
+        return None
+    directory = Path(str(artifacts_dir))
+    for name in _PAGE_IMAGE_NAMES:
+        path = directory / name
+        if path.exists():
+            try:
+                return path.read_bytes()
+            except OSError:
+                return None
+    return None
+
+
 def strip_markdown(text: str, strip_math: bool = True) -> str:
     r"""Reduce markdown to comparable text.
 
