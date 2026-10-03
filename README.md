@@ -209,25 +209,13 @@ inspect-scout tracks which samples models consistently fail or succeed on. inspe
 
 ## Releasing
 
-Releases publish to PyPI via [trusted publishing](https://docs.pypi.org/trusted-publishers/) — no API tokens. One-time setup: add a Trusted Publisher on PyPI for `Generality-Labs/inspect_dataset`, workflow `release.yml`, environment `pypi`.
+Releases publish to PyPI via [trusted publishing](https://docs.pypi.org/trusted-publishers/), with no API tokens. One-time setup: add a Trusted Publisher on PyPI for `Generality-Labs/inspect_dataset`, workflow `publish.yml`, environment `pypi`.
 
-`main` is protected, so a release goes through a pull request and the tag is pushed after it merges:
+1. _Actions_ → **Prepare release** → _Run workflow_, choosing the bump (`auto` picks minor for new or changed features, patch for fixes only). It bumps `version` in `pyproject.toml`, collects `changelog.d/` into `CHANGELOG.md`, and opens a **Release vX.Y.Z** pull request.
+2. On that pull request's Checks tab, click **Approve workflows to run**, then review it. Add a summary paragraph under the new heading if the release needs one.
+3. Merge it. **Release on merge** tags the merge commit, creates the GitHub release, and starts `publish.yml`, which checks the tag against the built wheel and uploads to PyPI.
 
-```bash
-git switch -c release
-uv version --bump minor      # or patch / major; updates pyproject.toml
-V=$(uv version --short)
-uv run scriv collect         # writes changelog.d/ fragments into CHANGELOG.md
-git commit -am "Release $V"
-gh pr create --fill          # merge it once CI passes, then:
-git switch main && git pull
-git tag "v$V"
-git push origin "v$V"
-```
-
-For 0.4.0, the first release, skip the bump: `pyproject.toml` already says 0.4.0.
-
-The tag push triggers `.github/workflows/release.yml`, which builds with `uv build`, checks the tag against the built wheel's version, and publishes.
+The workflows are thin callers of [python-project-template](https://github.com/Generality-Labs/python-project-template)'s reusable ones. By hand, the same is `uv version --bump minor`, `uv run scriv collect`, a pull request, and then `git tag vX.Y.Z && git push origin vX.Y.Z` on the merge commit, which starts `publish.yml`.
 
 ## Development
 
@@ -236,7 +224,7 @@ uv sync                     # the dev group is installed by default
 uv run pytest
 ```
 
-Each pull request adds a changelog fragment rather than editing `CHANGELOG.md`, so concurrent PRs don't conflict. Run `uv run scriv create`, uncomment the sections that apply in the new file under `changelog.d/`, and commit it with the change, or delete it if the change needs no entry. At release time, bump the version and run `uv run scriv collect`, which writes the fragments into `CHANGELOG.md` under the new version and deletes them.
+Each pull request adds a changelog fragment rather than editing `CHANGELOG.md`, so concurrent PRs don't conflict. Run `uv run scriv create`, uncomment the sections that apply in the new file under `changelog.d/`, and commit it with the change, or delete it if the change needs no entry. To release, run the **Prepare release** workflow from the Actions tab. It bumps `version` in `pyproject.toml`, collects the fragments into `CHANGELOG.md`, and opens a release pull request, whose CI starts once you click **Approve workflows to run** on it; merging it tags the release. It needs _Settings → Actions → General_ → **Allow GitHub Actions to create and approve pull requests**. By hand, the same is `uv version --bump minor` and `uv run scriv collect`.
 
 If you are working on the interactive viewer itself, also install frontend dependencies and build the bundle:
 

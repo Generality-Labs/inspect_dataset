@@ -35,7 +35,7 @@ inspect = [
 ]
 
 [build-system]
-requires = ["uv_build>=0.12.3,<0.13.0"]
+requires = ["uv_build>=0.12.22,<0.13.0"]
 build-backend = "uv_build"
 
 [tool.uv.build-backend]
@@ -58,8 +58,8 @@ md_html_anchors = false
 # Without this, two fragments in one category leave a blank line between them,
 # which makes the list loose and fails mdformat on the release commit.
 compact_fragments = true
-# The version's single source is [project] version above, managed with
-# `uv version`; __version__ reads it back from the installed metadata.
+# The version's single source is [project] version above, which
+# `uv version --bump` (and the Prepare release workflow) rewrites.
 version = "literal: pyproject.toml: project.version"
 
 [tool.ruff]
