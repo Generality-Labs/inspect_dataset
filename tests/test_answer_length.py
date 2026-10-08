@@ -170,8 +170,16 @@ def test_scorer_gate_comes_before_the_answer_type_check():
 
 
 def test_verbatim_scorer_measures_as_before():
-    fields = FieldMap(question="q", answer="a", scorers=["inspect_ai/exact", "inspect_ai/f1"])
+    fields = FieldMap(question="q", answer="a", scorers=["inspect_ai/exact"])
     recs = records("one two three four five six", "yes", "no", "blue", "red", "green", "Big")
     findings = answer_length(recs, fields)
     assert findings
     assert findings == answer_length(recs, FIELDS)
+
+
+def test_partial_credit_scorer_alongside_exact_is_not_applicable():
+    # SQuAD: span answers scored by f1 and exact. f1 credits a partly reproduced long answer.
+    fields = FieldMap(question="q", answer="a", scorers=["inspect_ai/f1", "inspect_ai/exact"])
+    recs = records("one two three four five six", "yes", "no")
+    with pytest.raises(ScannerNotApplicable, match="f1 gives partial credit"):
+        answer_length(recs, fields)
