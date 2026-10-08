@@ -198,3 +198,22 @@ def test_samples_fall_back_to_str_for_values_json_cannot_encode():
     records = [{"q": "Q", "a": {(1, 2): "pair"}}, {"q": "Q", "a": circular}]
     samples = _samples(records, FieldMap(question="q", answer="a"))
     assert [s["answer"] for s in samples] == ["{(1, 2): 'pair'}", "['x', [...]]"]
+
+
+def test_terminal_report_prints_sample_text_that_looks_like_markup():
+    # MacBench's answers are wrapped in [ANSWER]...[/ANSWER]; rich read the closing tag as
+    # markup and the scan crashed after writing nothing to the terminal.
+    finding = Finding(
+        scanner="answer_length",
+        severity="medium",
+        category="label_quality",
+        explanation="Answer has 9 words. Answer: '[ANSWER]B[/ANSWER] and [bold]x[/bold]'",
+        sample_index=0,
+        sample_id="[s1]",
+    )
+    run = ScanRun(dataset_name="d", split=None, total_samples=1, findings=[finding])
+    console = Console(record=True, width=200)
+    print_report(run, console=console)
+    text = console.export_text()
+    assert "[ANSWER]B[/ANSWER] and [bold]x[/bold]" in text
+    assert "id=[s1]" in text
