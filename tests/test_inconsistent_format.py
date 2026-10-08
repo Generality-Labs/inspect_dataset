@@ -269,8 +269,41 @@ def test_scorer_gate_comes_before_the_answer_type_check():
 
 
 def test_verbatim_scorer_measures_as_before():
-    fields = FieldMap(question="q", answer="a", scorers=["inspect_ai/exact", "inspect_ai/f1"])
+    fields = FieldMap(question="q", answer="a", scorers=["inspect_ai/pattern"])
     recs = records("one two three four five six", "yes", "no", "blue", "red", "green", "Big")
     findings = inconsistent_format(recs, fields)
     assert findings
     assert findings == inconsistent_format(recs, FIELDS)
+
+
+def _issues(findings):
+    return sorted({f.metadata["issue"] for f in findings})
+
+
+CASE_AND_PUNCTUATION = ["yes", "no", "blue", "red", "green", "Big", "pink.", "grey", "teal", "gold"]
+
+
+def test_exact_folds_case_and_punctuation_so_only_length_is_checked():
+    fields = FieldMap(question="q", answer="a", scorers=["inspect_ai/exact"])
+    recs = records(*CASE_AND_PUNCTUATION)
+    assert _issues(inconsistent_format(recs, FIELDS)) == ["capitalisation", "trailing_punctuation"]
+    assert inconsistent_format(recs, fields) == []
+
+
+def test_includes_folds_case_but_compares_punctuation():
+    fields = FieldMap(question="q", answer="a", scorers=["inspect_ai/includes"])
+    assert _issues(inconsistent_format(records(*CASE_AND_PUNCTUATION), fields)) == [
+        "trailing_punctuation"
+    ]
+
+
+def test_exact_still_flags_a_length_outlier():
+    fields = FieldMap(question="q", answer="a", scorers=["inspect_ai/exact"])
+    answers = ["a b"] * 20 + ["one two three four five six seven eight nine ten eleven twelve"]
+    assert _issues(inconsistent_format(records(*answers), fields)) == ["length_outlier"]
+
+
+def test_partial_credit_alongside_exact_is_not_applicable():
+    fields = FieldMap(question="q", answer="a", scorers=["inspect_ai/f1", "inspect_ai/exact"])
+    with pytest.raises(ScannerNotApplicable, match="f1 gives partial credit"):
+        inconsistent_format(records(*CASE_AND_PUNCTUATION), fields)

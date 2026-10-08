@@ -74,3 +74,22 @@ async def test_async_runner_records_status_for_sync_and_llm_scanners():
         "llm_finds_one": {"status": "ran"},
     }
     assert [f.scanner for f in run.findings] == ["llm_finds_one"]
+
+
+def test_scanners_see_the_runs_source_type():
+    from inspect_dataset._types import FieldMap
+    from inspect_dataset.scanner import ScannerDef, run_scanners
+
+    seen: list[str | None] = []
+
+    def capture(records, fields):
+        seen.append(fields.source_type)
+        return []
+
+    run_scanners(
+        [{"q": "x", "a": "y"}],
+        FieldMap(question="q", answer="a"),
+        [ScannerDef(name="capture", fn=capture, description="")],
+        source_type="inspect_task",
+    )
+    assert seen == ["inspect_task"]

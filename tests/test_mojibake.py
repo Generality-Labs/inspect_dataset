@@ -229,3 +229,22 @@ def test_severity():
 )
 def test_legitimate_text_not_flagged(text):
     assert mojibake(rec(text, text, choices=[text]), FIELDS) == []
+
+
+# Real strings from sciknoweval: crystal cell volumes and areas in ångströms.
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Volume: 157.67742978 Å³, Number of atoms: 12",
+        "a surface area of 23.4 Å² per molecule",
+        "Å³ is the unit",
+    ],
+)
+def test_angstrom_with_a_superscript_is_a_unit_not_mojibake(text: str):
+    assert mojibake(rec(text), FIELDS) == []
+
+
+def test_angstrom_with_a_superscript_kept_beside_real_mojibake():
+    findings = mojibake(rec("Volume 157 Å³ at 25 Â°C"), FIELDS)
+    assert len(findings) == 1
+    assert {span["text"] for span in findings[0].metadata["spans"]} == {"Å³", "Â°"}

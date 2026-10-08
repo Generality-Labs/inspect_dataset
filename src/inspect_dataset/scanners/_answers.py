@@ -25,6 +25,64 @@ VERBATIM_SCORERS = frozenset(
 )
 
 
+# What each built-in verbatim scorer is thrown by, with its default arguments. exact and match
+# fold case and ignore punctuation before comparing; includes folds case but compares
+# punctuation; pattern reads the raw text. A scorer added to VERBATIM_SCORERS without an entry
+# here is assumed to compare everything.
+CASE, PUNCTUATION, LENGTH = "case", "punctuation", "length"
+_EVERY_ASPECT = frozenset({CASE, PUNCTUATION, LENGTH})
+_COMPARES: dict[str, frozenset[str]] = {
+    "inspect_ai/exact": frozenset({LENGTH}),
+    "inspect_ai/match": frozenset({LENGTH}),
+    "inspect_ai/includes": frozenset({PUNCTUATION, LENGTH}),
+    "inspect_ai/pattern": _EVERY_ASPECT,
+}
+# Scorers that credit a partly reproduced answer, so beside them a long answer still scores.
+PARTIAL_CREDIT_SCORERS = frozenset({"inspect_ai/f1"})
+
+
+def _compares(scorers: Sequence[str], aspect: str) -> bool:
+    if aspect == LENGTH and any(s in PARTIAL_CREDIT_SCORERS for s in scorers):
+        return False
+    return any(
+        aspect in _COMPARES.get(s, _EVERY_ASPECT if s in VERBATIM_SCORERS else frozenset())
+        for s in scorers
+    )
+
+
+def require_compared(fields: FieldMap, scanner: str, aspects: Sequence[str]) -> frozenset[str]:
+    """The aspects of the answer text, among ``aspects``, that a scorer of the task is thrown by.
+
+    All of them when the scorer is unknown (``fields.scorers`` is None, outside task mode).
+
+    Raises:
+        ScannerNotApplicable: if the task has no scorer, or none of its scorers is thrown by any.
+    """
+    scorers = fields.scorers
+    if scorers is None:
+        return frozenset(aspects)
+    compared = frozenset(a for a in aspects if _compares(scorers, a))
+    if compared:
+        return compared
+    assumption = f"{scanner} assumes a scorer that compares answer text verbatim"
+    if not scorers:
+        raise ScannerNotApplicable(f"{assumption}; this task has no scorer")
+    if not any(s in VERBATIM_SCORERS or s in PARTIAL_CREDIT_SCORERS for s in scorers):
+        # No scorer compares the text at all (a code-execution or choice scorer, say).
+        raise ScannerNotApplicable(f"{assumption}; this task scores with {', '.join(scorers)}")
+    named = ", ".join(aspects[:-1]) + (" or " if len(aspects) > 1 else "") + aspects[-1]
+    credit = (
+        f" ({', '.join(s.split('/')[-1] for s in scorers if s in PARTIAL_CREDIT_SCORERS)} "
+        "gives partial credit)"
+        if LENGTH in aspects and any(s in PARTIAL_CREDIT_SCORERS for s in scorers)
+        else ""
+    )
+    raise ScannerNotApplicable(
+        f"{assumption}; this task scores with {', '.join(scorers)}, which do not depend on "
+        f"the answer's {named}{credit}"
+    )
+
+
 def require_verbatim_scorer(fields: FieldMap, scanner: str) -> None:
     """Check that the task's scorer compares answer text verbatim.
 
