@@ -6,6 +6,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 <!-- scriv-insert-here -->
 
+## [0.6.0] - 2026-10-08
+
+### Added
+
+- `FieldMap.source_type`: where the records came from (`hf`, `inspect_task` or `local`). The scanner runner sets it, so a scanner can judge evidence by its source; it is `None` when a scanner is called directly.
+
+### Changed
+
+- `encoding_issues` no longer flags tabs used as layout: indentation (code pasted without a fence, such as tracebacks in issue text), a tab after a list bullet or number, and tabs separating the columns of a table row. A single tab inside prose is still flagged. On a sweep of Inspect Evals this removed nearly all of SWE-bench's and b3's findings.
+- A control character that swallowed the start of a LaTeX command, such as a tab followed by `extsuperscript` (`\textsuperscript` with its backslash read as a string escape), is now medium severity, and the explanation and `latex_commands` metadata name the command. `latex_escapes` only looks inside math, so these were otherwise reported as stray tabs.
+- `extraction_artifacts` no longer reports a non-breaking space on its own in a HuggingFace or task dataset, where web text is full of them; it is still counted beside another artifact, and still reported alone in local annotation files extracted from PDFs. A zero-width joiner or non-joiner between two letters of a non-Latin script is spelling (Bengali, Telugu, Persian), not an artifact. On a sweep of Inspect Evals these took the scanner from 2,103 findings to 366, mostly APPS, DROP, MMLU and MGSM.
+- `inconsistent_format` runs each check only when a scorer of the task is thrown by it. `exact` and `match` fold case and ignore punctuation, so under them capitalisation and trailing punctuation are no longer checked; `includes` folds case but compares punctuation; `pattern` compares everything. Length outliers are still checked under every verbatim scorer.
+- `answer_length` and `inconsistent_format`'s length check no longer apply when the task also scores with `f1`, which gives partial credit for a long answer. This reverses the decision in #33 that `exact` beside `f1` runs the rules as before: on SQuAD, scored with both, they reported 1,495 findings, none of which could change a score. A scanner that does not apply says which aspects the task's scorers ignore.
+
+### Removed
+
+- The `forced_choice_leakage` scanner. A question that offers its answer as one of two options ("Is it an MRI or a CT scan?") is an ordinary binary question: a model that pattern-matches still has to choose between the options. On a sweep of every Inspect Evals eval it reported 1,614 findings, 1,333 of them on DROP's reading-comprehension questions ("Which happened first, X or Y?", answered from a passage), and none worth acting on. `binary_question_ratio` still reports datasets dominated by binary questions. `--scanners forced_choice_leakage` is now an unknown scanner.
+
+### Fixed
+
+- `mojibake` no longer flags areas and volumes in ångströms. `Å²` and `Å³` are valid UTF-8 for `Ų` and `ų` when read as Windows-1252, so the scanner reported them as mojibake. They are now weak evidence, like a Mac Roman `√π`: reported only beside other mojibake in the same field, or between letters. On a sweep of Inspect Evals this removed 365 false positives from SciKnowEval and changed nothing else.
+- The terminal report no longer crashes when a finding quotes sample text that looks like rich markup, such as MacBench's `[ANSWER]…[/ANSWER]`. Explanations and sample ids are escaped; before, the scan raised `MarkupError` after writing its findings and exited 1.
+
 ## [0.5.0] - 2026-10-03
 
 The first release on PyPI. 0.4.0 was never published, so this section covers everything since 0.3.4. It covers:
