@@ -10,6 +10,7 @@ from inspect_dataset.scanners._answers import (
     VERBATIM_SCORERS,
     choice_letters,
     record_choices,
+    require_compared,
     require_verbatim_scorer,
     resolve_choice,
     resolved_answer,
@@ -130,3 +131,40 @@ def test_task_without_scorer_is_not_applicable():
         "inconsistent_format assumes a scorer that compares answer text verbatim; "
         "this task has no scorer"
     )
+
+
+# ---------------------------------------------------------------------------
+# What each scorer compares: case, punctuation, length
+# ---------------------------------------------------------------------------
+
+ALL_ASPECTS = ("case", "punctuation", "length")
+
+
+@pytest.mark.parametrize(
+    ("scorers", "compared"),
+    [
+        (None, {"case", "punctuation", "length"}),
+        (["inspect_ai/exact"], {"length"}),
+        (["inspect_ai/match"], {"length"}),
+        (["inspect_ai/includes"], {"punctuation", "length"}),
+        (["inspect_ai/pattern"], {"case", "punctuation", "length"}),
+        (["inspect_ai/exact", "inspect_ai/includes"], {"punctuation", "length"}),
+    ],
+)
+def test_the_aspects_a_scorer_compares(scorers, compared):
+    assert require_compared(_scored_with(scorers), "x", ALL_ASPECTS) == compared
+
+
+def test_partial_credit_alongside_exact_makes_length_not_decisive():
+    with pytest.raises(ScannerNotApplicable) as excinfo:
+        require_compared(_scored_with(["inspect_ai/f1", "inspect_ai/exact"]), "x", ALL_ASPECTS)
+    assert str(excinfo.value) == (
+        "x assumes a scorer that compares answer text verbatim; this task scores with "
+        "inspect_ai/f1, inspect_ai/exact, which do not depend on the answer's case, "
+        "punctuation or length (f1 gives partial credit)"
+    )
+
+
+def test_a_scorer_without_a_text_comparison_keeps_the_short_reason():
+    with pytest.raises(ScannerNotApplicable, match=r"scores with inspect_ai/choice$"):
+        require_compared(_scored_with(["inspect_ai/choice"]), "x", ("length",))

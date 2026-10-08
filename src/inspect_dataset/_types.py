@@ -31,6 +31,9 @@ class FieldMap:
     choices: str | None = None
     # Registry names of the task's scorers (e.g. "inspect_ai/choice"). None outside task mode.
     scorers: list[str] | None = None
+    # Where the records came from: "hf", "inspect_task" or "local" (annotation files), as the
+    # run records it. Set by the scanner runner; None when a scanner is called directly.
+    source_type: str | None = None
 
 
 @dataclass
