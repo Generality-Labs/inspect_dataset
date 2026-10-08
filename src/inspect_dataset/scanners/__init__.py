@@ -11,7 +11,6 @@ from inspect_dataset.scanners.binary_question_ratio import binary_question_ratio
 from inspect_dataset.scanners.duplicate_questions import duplicate_questions
 from inspect_dataset.scanners.encoding_issues import encoding_issues
 from inspect_dataset.scanners.extraction_artifacts import extraction_artifacts
-from inspect_dataset.scanners.forced_choice_leakage import forced_choice_leakage
 from inspect_dataset.scanners.image_mime_type import image_mime_type
 from inspect_dataset.scanners.inconsistent_format import inconsistent_format
 from inspect_dataset.scanners.label_correctness import (
@@ -28,7 +27,6 @@ BUILTIN_SCANNERS: list[ScannerDef] = [
     duplicate_questions,
     inconsistent_format,
     answer_distribution,
-    forced_choice_leakage,
     encoding_issues,
     latex_escapes,
     mojibake,
