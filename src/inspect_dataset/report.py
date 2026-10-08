@@ -101,8 +101,10 @@ def print_report(run: ScanRun, console: Console | None = None) -> None:
         for f in findings_sorted[:5]:
             colour = _SEVERITY_COLOUR[f.severity]
             id_str = f"id={f.sample_id}" if f.sample_id is not None else f"index={f.sample_index}"
+            # Explanations quote sample text, which can contain markup-like tags ([/ANSWER]).
             console.print(
-                f"  [{colour}][{f.severity.upper()}][/{colour}] [{id_str}] {f.explanation}"
+                f"  [{colour}][{f.severity.upper()}][/{colour}] "
+                f"{escape(f'[{id_str}]')} {escape(f.explanation)}"
             )
         if len(findings) > 5:
             console.print(f"  [dim]... and {len(findings) - 5} more (see output files)[/dim]")
