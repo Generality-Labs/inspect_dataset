@@ -47,7 +47,7 @@ def test_code_execution_scorer_reports_reasons(tmp_path: Path, monkeypatch):
     assert summary["by_scanner"] == {}
 
 
-@pytest.mark.parametrize("scorers", [["inspect_ai/match"], ["inspect_ai/exact", "inspect_ai/f1"]])
+@pytest.mark.parametrize("scorers", [["inspect_ai/match"], ["inspect_ai/exact"]])
 def test_verbatim_scorer_runs_the_rules(tmp_path: Path, monkeypatch, scorers):
     summary = _scan_summary(tmp_path, monkeypatch, scorers)
     assert summary["scanner_status"] == {
@@ -55,3 +55,11 @@ def test_verbatim_scorer_runs_the_rules(tmp_path: Path, monkeypatch, scorers):
         "inconsistent_format": {"status": "ran"},
     }
     assert summary["by_scanner"]["answer_length"]["total"] == 1
+
+
+def test_exact_beside_f1_does_not_run_the_rules(tmp_path: Path, monkeypatch):
+    # SQuAD's scoring: exact folds case and punctuation, and f1 credits a partly
+    # reproduced long answer, so no rule here can change a score.
+    summary = _scan_summary(tmp_path, monkeypatch, ["inspect_ai/exact", "inspect_ai/f1"])
+    assert {s["status"] for s in summary["scanner_status"].values()} == {"not_applicable"}
+    assert summary["by_scanner"] == {}
