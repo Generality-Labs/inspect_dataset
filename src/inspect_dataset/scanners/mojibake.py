@@ -51,6 +51,10 @@ _CYRILLIC = (0x0400, 0x045F)
 _MATH_LEADS = frozenset("√≈")
 _MATH_CONTINUATIONS = frozenset("≠∞±≤≥µ∂∑∏π∫Ω")
 
+# Windows-1252 "Å" followed by a superscript digit is an area or volume in
+# ångströms (Å², Å³) as often as mojibake (Å³ is ų).
+_UNIT_PAIRS = frozenset({"Å¹", "Å²", "Å³"})
+
 _MAX_LAYERS = 4
 _CONTEXT = 20
 
@@ -133,11 +137,15 @@ def _codec_spans(text: str, codec: _Codec) -> list[_Span]:
             i += 1
             continue
         seq = m.group()
-        weak = _in_blocks(char, _EAST_ASIAN_BLOCKS) or (
-            codec.name == "mac_roman"
-            and len(seq) == 2
-            and seq[0] in _MATH_LEADS
-            and seq[1] in _MATH_CONTINUATIONS
+        weak = (
+            _in_blocks(char, _EAST_ASIAN_BLOCKS)
+            or (
+                codec.name == "mac_roman"
+                and len(seq) == 2
+                and seq[0] in _MATH_LEADS
+                and seq[1] in _MATH_CONTINUATIONS
+            )
+            or seq in _UNIT_PAIRS
         )
         if spans and spans[-1].end == m.start():
             last = spans[-1]
