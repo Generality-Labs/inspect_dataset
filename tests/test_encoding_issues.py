@@ -100,3 +100,61 @@ def test_other_control_char_inside_code_still_flagged():
     findings = encoding_issues(rec(text, "3"), FIELDS)
     assert len(findings) == 1
     assert findings[0].metadata["bad_chars"] == ["'\\x0c'"]
+
+
+def test_tab_used_as_indentation_not_flagged():
+    traceback = 'Traceback:\n\tFile "a.py", line 1\n\t\traise ValueError\n  \tindented after spaces'
+    assert encoding_issues(rec(traceback, "ok"), FIELDS) == []
+
+
+def test_tab_inside_a_line_still_flagged_after_indentation():
+    findings = encoding_issues(rec("\tthree\tdresses", "ok"), FIELDS)
+    assert len(findings) == 1
+    assert findings[0].metadata["bad_chars"] == ["'\\t'"]
+
+
+def test_control_character_from_a_latex_command_is_named_and_medium():
+    # "\textsubscript" in a non-raw string: a tab, then "extsubscript"
+    question = "In a crystal similar to Mn\textsubscript{3}Ge, which property holds?"
+    findings = encoding_issues(rec(question, "ok"), FIELDS)
+    assert len(findings) == 1
+    f = findings[0]
+    assert f.severity == "medium"
+    assert f.metadata["latex_commands"] == ["\\textsubscript"]
+    assert "\\textsubscript" in f.explanation
+    assert "escape" in f.explanation
+
+
+def test_backspace_and_form_feed_from_latex_are_named():
+    question = "Find \beta given \frac{1}{2}"
+    findings = encoding_issues(rec(question, "ok"), FIELDS)
+    assert findings[0].metadata["latex_commands"] == ["\\beta", "\\frac"]
+    assert findings[0].severity == "medium"
+
+
+def test_a_stray_tab_in_prose_stays_low():
+    findings = encoding_issues(rec("what?", "skull\tcartilage"), FIELDS)
+    assert findings[0].severity == "low"
+    assert "latex_commands" not in findings[0].metadata
+
+
+def test_a_latex_command_at_the_start_of_a_line_is_not_indentation():
+    question = "What is the half-life of\n\textsuperscript{227}Th?"
+    findings = encoding_issues(rec(question, "ok"), FIELDS)
+    assert len(findings) == 1
+    assert findings[0].metadata["latex_commands"] == ["\\textsuperscript"]
+
+
+def test_tabs_separating_table_columns_not_flagged():
+    table = "Translate:\n1\tApo onadewadewa\tYou will be good.\n2\tApo onanae\tYou will go."
+    assert encoding_issues(rec(table, "ok"), FIELDS) == []
+
+
+def test_a_tab_after_a_bullet_not_flagged():
+    text = "Include:\n•\tBreakdown of income\n-\tFor revenue\n3.\tFor expenses"
+    assert encoding_issues(rec(text, "ok"), FIELDS) == []
+
+
+def test_a_single_tab_inside_prose_still_flagged():
+    findings = encoding_issues(rec("She bought three\tdresses.", "ok"), FIELDS)
+    assert findings[0].metadata["bad_chars"] == ["'\\t'"]
