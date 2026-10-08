@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import unicodedata
+
 from inspect_dataset._types import FieldMap, Finding, Record, Severity
 from inspect_dataset.scanner import ScannerDef, get_sample_id
 
@@ -23,6 +25,28 @@ _ARTIFACT_NAMES = {
 }
 
 
+# Zero-width joiners are part of how Bengali, Telugu, Persian and other scripts spell words,
+# so one between two letters of such a script is orthography, not an extraction artifact.
+_JOINERS = frozenset({"\u200c", "\u200d"})
+
+
+def _script_letter(ch: str) -> bool:
+    return unicodedata.category(ch)[0] in "LM" and "LATIN" not in unicodedata.name(ch, "LATIN")
+
+
+def _joins_letters(line: str, pos: int) -> bool:
+    return (
+        0 < pos < len(line) - 1 and _script_letter(line[pos - 1]) and _script_letter(line[pos + 1])
+    )
+
+
+# Web text is full of non-breaking spaces, so in a published dataset one tells nothing on its
+# own; it is counted beside another artifact. In local annotation files, extracted from PDFs,
+# it is an extraction artifact like the others.
+_NBSP = "non-breaking space (U+00A0)"
+_PUBLISHED = frozenset({"hf", "inspect_task"})
+
+
 def _scan(records: list[Record], fields: FieldMap) -> list[Finding]:
     findings: list[Finding] = []
     for i, record in enumerate(records):
@@ -34,13 +58,15 @@ def _scan(records: list[Record], fields: FieldMap) -> list[Finding]:
             found: dict[str, int] = {}
             first_line: int | None = None
             for line_no, line in enumerate(text.splitlines(), start=1):
-                for ch in line:
+                for pos, ch in enumerate(line):
+                    if ch in _JOINERS and _joins_letters(line, pos):
+                        continue
                     if ch in _ARTIFACT_NAMES:
                         name = _ARTIFACT_NAMES[ch]
                         found[name] = found.get(name, 0) + 1
                         if first_line is None:
                             first_line = line_no
-            if not found:
+            if not found or (set(found) == {_NBSP} and fields.source_type in _PUBLISHED):
                 continue
             offset_val = record.get("__md_body_offset__", 0)
             offset = offset_val if isinstance(offset_val, int) else 0
@@ -71,6 +97,7 @@ extraction_artifacts = ScannerDef(
     description=(
         "Flag characters that betray un-cleaned PDF/OCR extraction: ligatures, "
         "soft hyphens, zero-width characters, non-breaking spaces, BOMs, and "
-        "U+FFFD replacement characters."
+        "U+FFFD replacement characters. In a HuggingFace or task dataset a non-breaking "
+        "space is only reported beside another artifact."
     ),
 )
