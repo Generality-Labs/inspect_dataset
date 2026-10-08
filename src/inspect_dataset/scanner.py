@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 from collections.abc import Callable, Coroutine, Iterable, Mapping
 from typing import Any, Literal, get_args
 
@@ -175,6 +176,7 @@ def run_scanners(
     all_findings: list[Finding] = []
     status: dict[str, dict[str, str]] = {}
     unmet = _unmet_requirements(records, fields, source_type)
+    fields = dataclasses.replace(fields, source_type=source_type)
     for scanner in scanners:
         assert isinstance(scanner, ScannerDef)
         reason = _not_applicable_reason(scanner, unmet)
@@ -239,6 +241,7 @@ async def run_scanners_async(
     # Run async (LLM) scanners concurrently
     async_scanners: list[LLMScannerDef] = []
     unmet = _unmet_requirements(records, fields, source_type)
+    fields = dataclasses.replace(fields, source_type=source_type)
     for s in scanners:
         if not isinstance(s, LLMScannerDef):
             continue
