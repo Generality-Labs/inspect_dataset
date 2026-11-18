@@ -1,3 +1,4 @@
+import importlib
 from pathlib import Path
 
 import pytest
@@ -6,7 +7,9 @@ from inspect_dataset._ignore import (
     IGNORE_FILE_NAME,
     IgnoreFileError,
     apply_ignores,
+    find_ignore_file,
     load_ignore_file,
+    task_source_dir,
 )
 from inspect_dataset._types import Finding, ScanRun
 
@@ -129,3 +132,65 @@ def test_a_scanner_that_did_not_run_is_left_out():
     apply_ignores(run, {"llm_answer_check": "r"})
     assert "llm_answer_check" not in run.scanner_status
     assert len(run.findings) == 3
+
+
+def _package(root: Path, name: str) -> Path:
+    pkg = root / name
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("")
+    return pkg
+
+
+def test_a_file_spec_looks_beside_the_file(tmp_path: Path):
+    (tmp_path / "task.py").write_text("")
+    ignore = _write(tmp_path, GOOD)
+    assert find_ignore_file(f"{tmp_path / 'task.py'}@my_task") == ignore
+
+
+def test_a_module_spec_looks_beside_the_module(fake_packages: Path):
+    pkg = _package(fake_packages, "ids_ignore_a")
+    (pkg / "tasks.py").write_text("")
+    ignore = _write(pkg, GOOD)
+    assert find_ignore_file("ids_ignore_a.tasks@my_task") == ignore
+
+
+def test_a_package_task_spec_looks_in_the_eval_folder(fake_packages: Path):
+    pkg = _package(fake_packages, "ids_ignore_b")
+    eval_dir = _package(pkg, "drop")
+    ignore = _write(eval_dir, GOOD)
+    assert find_ignore_file("ids_ignore_b/drop") == ignore
+
+
+def test_a_registry_name_looks_beside_the_task_functions_source(fake_packages: Path, monkeypatch):
+    pkg = _package(fake_packages, "ids_ignore_c")
+    eval_dir = _package(pkg, "mmlu")
+    (eval_dir / "mmlu.py").write_text("def mmlu_0_shot():\n    return None\n")
+    ignore = _write(eval_dir, GOOD)
+    module = importlib.import_module("ids_ignore_c.mmlu.mmlu")
+    monkeypatch.setattr(
+        "inspect_ai._util.registry.registry_lookup",
+        lambda type, name: module.mmlu_0_shot if name == "ids_ignore_c/mmlu_0_shot" else None,
+    )
+    assert find_ignore_file("ids_ignore_c/mmlu_0_shot") == ignore
+
+
+def test_a_registered_inspect_evals_task_resolves_to_its_eval_folder():
+    pytest.importorskip("inspect_evals")
+    assert task_source_dir("inspect_evals/mmlu_0_shot").parts[-2:] == ("inspect_evals", "mmlu")
+
+
+def test_no_file_beside_the_task_gives_none(tmp_path: Path):
+    (tmp_path / "task.py").write_text("")
+    assert find_ignore_file(f"{tmp_path / 'task.py'}@my_task") is None
+
+
+def test_the_parent_folder_is_not_searched(fake_packages: Path):
+    pkg = _package(fake_packages, "ids_ignore_d")
+    _package(pkg, "drop")
+    _write(pkg, GOOD)
+    assert find_ignore_file("ids_ignore_d/drop") is None
+
+
+def test_an_unresolvable_spec_gives_none():
+    assert task_source_dir("no_such_owner_pkg_xyz/boolq") is None
+    assert task_source_dir("no_such_module_xyz@task") is None
