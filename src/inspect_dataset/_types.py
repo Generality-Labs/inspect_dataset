@@ -44,8 +44,19 @@ class Finding:
     explanation: str
     sample_index: int
     sample_id: str | int | None = None
+    # Ids of every sample the finding covers, for a finding about several samples. When None,
+    # the finding covers only ``sample_id``; see ``covered_ids``.
+    sample_ids: list[str | int] | None = None
     line: int | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
+
+    def covered_ids(self) -> list[str | int]:
+        """Ids of the samples this finding covers: ``sample_ids`` if set, else ``sample_id``."""
+        if self.sample_ids is not None:
+            return self.sample_ids
+        if self.sample_id is None:
+            return []
+        return [self.sample_id]
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -55,6 +66,7 @@ class Finding:
             "explanation": self.explanation,
             "sample_index": self.sample_index,
             "sample_id": self.sample_id,
+            "sample_ids": self.covered_ids(),
             "line": self.line,
             "metadata": self.metadata,
         }

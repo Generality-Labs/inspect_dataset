@@ -169,6 +169,7 @@ def _group_finding(
         explanation=explanation,
         sample_index=indices[0],
         sample_id=ids[0],
+        sample_ids=[i for i in ids if i is not None],
         metadata={
             **metadata,
             "duplicate_indices": indices,
