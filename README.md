@@ -160,7 +160,7 @@ findings/
 
 Each finding includes the scanner name, severity, category, explanation, sample index, sample ID (if available), and scanner-specific metadata.
 
-Each finding has `sample_ids`, the ids of every sample the finding covers. For most scanners this is the finding's own `sample_id`, and for `duplicate_questions` it is the id of every sample in the group. When the dataset has no id field the ids are row indices, as for `sample_id`.
+Each finding has `sample_ids`, the ids of every sample the finding covers. For most scanners this is the finding's own `sample_id`, and for `duplicate_questions` it is the id of every sample in the group that has an id. A row with no value in the id field is left out of `sample_ids`, and `metadata.duplicate_ids` has `null` for it. When the dataset has no id field the ids are row indices, as for `sample_id`.
 
 `scan_summary.json` also has a `scanner_status` map with one entry per scanner that was run. A scanner that checked the dataset has `{"status": "ran"}`, whether or not it found anything. A scanner whose check does not fit the dataset has `{"status": "not_applicable", "reason": "..."}` and emits no findings. For example, `answer_length` and `inconsistent_format` measure answer text, so they do not apply to a list or struct answer column unless `--answer-subfield` selects a scalar inside it. The path is dotted, lists along it are measured element by element, and `*` measures each element of a list of strings. Plugin scanners can report the same status by raising `inspect_dataset.ScannerNotApplicable(reason)`.
 
