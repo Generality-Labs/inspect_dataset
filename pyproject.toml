@@ -16,6 +16,7 @@ dependencies = [
     "rich>=15.0.0",
     "datasets>=5.0.1",
     "openai>=2.53.0",
+    "pyyaml>=6",
 ]
 
 [project.scripts]
@@ -142,4 +143,5 @@ dev = [
     "scriv>=1.8",
     "watchfiles>=0.21",
     "basedpyright>=1.39",
+    "types-pyyaml>=6.0.12.20261113",
 ]
