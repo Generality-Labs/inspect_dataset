@@ -38,14 +38,21 @@ class IgnoreFileError(ValueError):
 def load_ignore_file(path: Path) -> dict[str, str]:
     """Read an ignore file and return a mapping from scanner name to reason.
 
-    An empty file, or a mapping without ``ignore``, gives an empty mapping.
+    The file is read as UTF-8. An empty file, or a mapping without ``ignore``, gives an empty
+    mapping.
 
     Raises:
-        IgnoreFileError: If the file is not valid YAML or does not follow the expected layout.
-            The message names the position of the entry at fault, such as ``ignore[1]``.
+        IgnoreFileError: If the file cannot be opened, is not UTF-8 text, is not valid YAML or
+            does not follow the expected layout. For a layout error the message names the
+            position of the entry at fault, such as ``ignore[1]``.
     """
     try:
-        data: Any = yaml.safe_load(path.read_text())
+        with path.open(encoding="utf-8") as f:
+            data: Any = yaml.safe_load(f)
+    except OSError as e:
+        raise IgnoreFileError(f"the file could not be opened: {e}") from e
+    except UnicodeDecodeError as e:
+        raise IgnoreFileError(f"the file could not be read as UTF-8 text: {e}") from e
     except yaml.YAMLError as e:
         raise IgnoreFileError(f"the file is not valid YAML: {e}") from e
     if data is None:

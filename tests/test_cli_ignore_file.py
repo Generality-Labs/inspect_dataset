@@ -91,11 +91,39 @@ def test_a_malformed_file_stops_the_scan_before_loading(tmp_path, monkeypatch):
     assert "reason" in result.output
 
 
-def test_a_file_in_the_current_directory_is_not_read_for_a_dataset(tmp_path, fake_hf, monkeypatch):
+@pytest.fixture
+def no_find(monkeypatch):
+    def fail(spec):
+        raise AssertionError("find_ignore_file was called")
+
+    monkeypatch.setattr(cli_mod, "find_ignore_file", fail)
+
+
+def test_a_file_in_the_current_directory_is_not_read_for_a_dataset(
+    tmp_path, fake_hf, no_find, monkeypatch
+):
     (tmp_path / ".inspect-dataset.yaml").write_text(GOOD)
     monkeypatch.chdir(tmp_path)
     out = tmp_path / "out"
     result = CliRunner().invoke(cli, [*HF, "-o", str(out)])
+    assert result.exit_code == 0, result.output
+    assert _summary(out)["scanner_status"]["duplicate_questions"] == {"status": "ran"}
+    assert _summary(out)["ignore_file"] is None
+
+
+def test_no_file_is_read_for_a_local_directory(tmp_path, no_find, monkeypatch):
+    def load(path, limit=None):
+        return list(RECORDS), FieldMap(question="q", answer="a")
+
+    monkeypatch.setattr(cli_mod, "load_local_samples", load)
+    samples = tmp_path / "samples"
+    samples.mkdir()
+    (samples / ".inspect-dataset.yaml").write_text(GOOD)
+    (tmp_path / ".inspect-dataset.yaml").write_text(GOOD)
+    monkeypatch.chdir(tmp_path)
+    out = tmp_path / "out"
+    args = ["scan", str(samples), "--scanners", "duplicate_questions", "-o", str(out)]
+    result = CliRunner().invoke(cli, args)
     assert result.exit_code == 0, result.output
     assert _summary(out)["scanner_status"]["duplicate_questions"] == {"status": "ran"}
     assert _summary(out)["ignore_file"] is None

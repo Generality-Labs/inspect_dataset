@@ -64,11 +64,29 @@ def test_an_empty_file_ignores_nothing(tmp_path: Path, text: str):
         "- scanner: a\n  reason: r\n",  # top level is not a mapping
         "ignored:\n  - scanner: a\n    reason: r\n",  # unknown top-level key
         "ignore: [\n",  # does not parse
+        "ignore:\n  - duplicate_questions\n",  # entry is a string
+        "ignore:\n  - scanner: 3\n    reason: r\n",  # scanner is not a string
+        "ignore:\n  - scanner: a\n    reason: No\n",  # reason is read as a boolean
+        "ignore:\n  - scanner: '  '\n    reason: r\n",  # blank scanner
     ],
 )
 def test_a_malformed_file_is_an_error(tmp_path: Path, text: str):
     with pytest.raises(IgnoreFileError):
         load_ignore_file(_write(tmp_path, text))
+
+
+def test_a_file_that_is_not_utf8_is_an_error(tmp_path: Path):
+    path = tmp_path / IGNORE_FILE_NAME
+    path.write_bytes(b"\xff\xfe" + "ignore: []\n".encode("utf-16-le"))
+    with pytest.raises(IgnoreFileError, match="UTF-8"):
+        load_ignore_file(path)
+
+
+@pytest.mark.parametrize("name", ["missing.yaml", ""])
+def test_a_path_that_cannot_be_opened_is_an_error(tmp_path: Path, name: str):
+    # The empty name gives tmp_path itself, a directory.
+    with pytest.raises(IgnoreFileError, match="could not be opened"):
+        load_ignore_file(tmp_path / name)
 
 
 def test_a_missing_reason_names_the_entry(tmp_path: Path):
@@ -194,3 +212,7 @@ def test_the_parent_folder_is_not_searched(fake_packages: Path):
 def test_an_unresolvable_spec_gives_none():
     assert task_source_dir("no_such_owner_pkg_xyz/boolq") is None
     assert task_source_dir("no_such_module_xyz@task") is None
+
+
+def test_a_built_in_module_without_a_file_gives_none():
+    assert task_source_dir("sys@x") is None

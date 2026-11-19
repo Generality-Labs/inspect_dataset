@@ -71,7 +71,7 @@ def print_report(run: ScanRun, console: Console | None = None) -> None:
         console.print(f"  [dim]Not applicable: {escape(name)} ({escape(reason)})[/dim]")
     for name, reason, count in _ignored(run):
         console.print(
-            f"  [dim]Ignored: {escape(name)}, {count} finding(s) ({escape(reason)})[/dim]"
+            f"  [dim]Ignored: {escape(name)}, {count:,} finding(s) ({escape(reason)})[/dim]"
         )
     console.print()
 
@@ -247,7 +247,7 @@ def _write_markdown_report(run: ScanRun, path: Path) -> None:
     ignored = _ignored(run)
     if ignored:
         lines += ["", "## Ignored", ""]
-        lines += [f"- `{name}`: {count} finding(s). {reason}" for name, reason, count in ignored]
+        lines += [f"- `{name}`: {count:,} finding(s). {reason}" for name, reason, count in ignored]
 
     lines += ["", "## Findings", ""]
 

@@ -127,3 +127,16 @@ def test_a_run_without_an_ignore_file_records_null(tmp_path: Path):
     summary = json.loads((tmp_path / "scan_summary.json").read_text())
     assert summary["ignore_file"] is None
     assert "## Ignored" not in (tmp_path / "REPORT.md").read_text()
+
+
+def test_an_ignored_count_has_a_thousands_separator(tmp_path: Path):
+    def _many(records: list[Record], fields: FieldMap) -> list[Finding]:
+        return [Finding("", "low", "format", "x", sample_index=0) for _ in range(1200)]
+
+    run = run_scanners(RECORDS, FIELDS, [ScannerDef(name="many", fn=_many)])
+    apply_ignores(run, {"many": "By design."})
+    save_findings(run, tmp_path)
+    assert "- `many`: 1,200 finding(s). By design." in (tmp_path / "REPORT.md").read_text()
+    console = Console(record=True, width=200)
+    print_report(run, console=console)
+    assert "Ignored: many, 1,200 finding(s) (By design.)" in console.export_text()
