@@ -25,6 +25,15 @@ def _not_applicable(run: ScanRun) -> list[tuple[str, str]]:
     )
 
 
+def _ignored(run: ScanRun) -> list[tuple[str, str, int]]:
+    """The scanners that the ignore file turned off, with the reason and the findings removed."""
+    return sorted(
+        (name, status.get("reason", ""), status.get("findings", 0))
+        for name, status in run.scanner_status.items()
+        if status.get("status") == "ignored"
+    )
+
+
 def _source_suffix(run: ScanRun) -> str:
     return f" ({run.group_by_source})" if run.group_by_source else ""
 
@@ -60,6 +69,10 @@ def print_report(run: ScanRun, console: Console | None = None) -> None:
     console.print(f"  Total findings: {len(run.findings):,}")
     for name, reason in _not_applicable(run):
         console.print(f"  [dim]Not applicable: {escape(name)} ({escape(reason)})[/dim]")
+    for name, reason, count in _ignored(run):
+        console.print(
+            f"  [dim]Ignored: {escape(name)}, {count} finding(s) ({escape(reason)})[/dim]"
+        )
     console.print()
 
     if not run.findings:
@@ -154,6 +167,7 @@ def save_findings(
         },
         "by_severity": {sev: len(findings) for sev, findings in run.by_severity().items()},
         "scanner_status": run.scanner_status,
+        "ignore_file": run.ignore_file,
     }
     (output_dir / "scan_summary.json").write_text(json.dumps(summary, indent=2))
 
@@ -229,6 +243,11 @@ def _write_markdown_report(run: ScanRun, path: Path) -> None:
     if not_applicable:
         lines += ["", "## Not applicable", ""]
         lines += [f"- `{name}`: {reason}" for name, reason in not_applicable]
+
+    ignored = _ignored(run)
+    if ignored:
+        lines += ["", "## Ignored", ""]
+        lines += [f"- `{name}`: {count} finding(s). {reason}" for name, reason, count in ignored]
 
     lines += ["", "## Findings", ""]
 

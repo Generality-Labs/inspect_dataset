@@ -8,6 +8,7 @@ from pathlib import Path
 from rich.console import Console
 
 from inspect_dataset import LLMScannerDef, ScannerDef, ScannerNotApplicable
+from inspect_dataset._ignore import apply_ignores
 from inspect_dataset._types import FieldMap, Finding, Record
 from inspect_dataset.report import print_report, save_findings
 from inspect_dataset.scanner import run_scanners, run_scanners_async
@@ -22,6 +23,10 @@ def _never_applies(records: list[Record], fields: FieldMap) -> list[Finding]:
 
 def _finds_nothing(records: list[Record], fields: FieldMap) -> list[Finding]:
     return []
+
+
+def _one_finding(records: list[Record], fields: FieldMap) -> list[Finding]:
+    return [Finding("", "low", "format", "x", sample_index=0)]
 
 
 NEVER_APPLIES = ScannerDef(name="never_applies", fn=_never_applies)
@@ -93,3 +98,32 @@ def test_scanners_see_the_runs_source_type():
         source_type="inspect_task",
     )
     assert seen == ["inspect_task"]
+
+
+def test_an_ignored_scanner_is_reported_with_its_reason_and_count(tmp_path: Path):
+    run = run_scanners(RECORDS, FIELDS, [ScannerDef(name="always", fn=_one_finding)])
+    apply_ignores(run, {"always": "By design."})
+    run.ignore_file = "/evals/x/.inspect-dataset.yaml"
+    save_findings(run, tmp_path)
+    summary = json.loads((tmp_path / "scan_summary.json").read_text())
+    assert summary["scanner_status"]["always"] == {
+        "status": "ignored",
+        "reason": "By design.",
+        "findings": 1,
+    }
+    assert summary["ignore_file"] == "/evals/x/.inspect-dataset.yaml"
+    assert not (tmp_path / "always.json").exists()
+    report = (tmp_path / "REPORT.md").read_text()
+    assert "## Ignored" in report
+    assert "- `always`: 1 finding(s). By design." in report
+    console = Console(record=True, width=200)
+    print_report(run, console=console)
+    assert "Ignored: always, 1 finding(s) (By design.)" in console.export_text()
+
+
+def test_a_run_without_an_ignore_file_records_null(tmp_path: Path):
+    run = run_scanners(RECORDS, FIELDS, [ScannerDef(name="always", fn=_one_finding)])
+    save_findings(run, tmp_path)
+    summary = json.loads((tmp_path / "scan_summary.json").read_text())
+    assert summary["ignore_file"] is None
+    assert "## Ignored" not in (tmp_path / "REPORT.md").read_text()
