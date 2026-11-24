@@ -243,7 +243,7 @@ def cli() -> None:
     help=(
         "A .inspect-dataset.yaml file listing scanners to ignore for this eval, each with a "
         "reason. In task mode the file beside the task's source is used when this option "
-        "is absent. Use --no-ignore-file to read no ignore file."
+        "is absent. To read no ignore file, use the option --no-ignore-file."
     ),
 )
 @click.option(

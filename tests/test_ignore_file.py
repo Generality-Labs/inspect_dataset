@@ -73,6 +73,9 @@ def test_an_empty_file_ignores_nothing(tmp_path: Path, text: str):
         "ignore:\n  - scanner: a\n    reason: r\nignore:\n  - scanner: b\n    reason: r\n",
         "ignore:\n  - scanner: a\n    reason: |\n      line one\n      line two\n",  # two lines
         'ignore:\n  - scanner: a\n    reason: "one\\rtwo"\n',  # carriage return
+        "? !!seq ''\n: x\n",  # key that cannot be hashed
+        "? !!map ''\n: x\n",  # key that cannot be hashed
+        "? !!set ''\n: x\n",  # key that cannot be hashed
     ],
 )
 def test_a_malformed_file_is_an_error(tmp_path: Path, text: str):

@@ -187,3 +187,11 @@ def test_a_relative_ignore_file_is_stored_as_an_absolute_path(
     stored = Path(_summary(out)["ignore_file"])
     assert stored.is_absolute()
     assert stored == (tmp_path / "ignore.yaml").resolve()
+
+
+def test_a_key_that_cannot_be_hashed_is_a_usage_error(tmp_path: Path, fake_hf: None):
+    ignore = tmp_path / "ignore.yaml"
+    ignore.write_text("? !!seq ''\n: x\n")
+    result = CliRunner().invoke(cli, [*HF, "--ignore-file", str(ignore)])
+    assert result.exit_code == 2, result.output
+    assert "unhashable key" in result.output

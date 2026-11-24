@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import importlib.util
 import inspect
-from collections.abc import Mapping
+from collections.abc import Hashable, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -56,6 +56,10 @@ class _UniqueKeyLoader(yaml.SafeLoader):
             ):
                 continue
             key = self.construct_object(key_node, deep=deep)
+            # A tagged scalar such as `!!seq ''` gives a key that cannot be hashed. The parent
+            # class reports it as an error.
+            if not isinstance(key, Hashable):
+                continue
             if key in seen:
                 raise _RepeatedKeyError(key, key_node)
             seen.add(key)
