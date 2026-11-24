@@ -166,6 +166,7 @@ def test_sample_id_from_field():
     findings = duplicate_questions(data, fields)
     assert [f.sample_id for f in findings] == ["id-0"]
     assert findings[0].metadata["duplicate_ids"] == ["id-0", "id-1"]
+    assert findings[0].sample_ids == ["id-0", "id-1"]
 
 
 def test_one_finding_per_group_on_its_first_row():
