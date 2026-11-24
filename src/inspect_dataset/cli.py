@@ -369,6 +369,7 @@ def scan(
         ignore_path = find_ignore_file(dataset)
     ignores: dict[str, str] = {}
     if ignore_path is not None:
+        ignore_path = ignore_path.resolve()
         try:
             ignores = load_ignore_file(ignore_path)
         except IgnoreFileError as e:

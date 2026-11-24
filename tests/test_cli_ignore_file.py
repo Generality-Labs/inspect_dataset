@@ -62,7 +62,7 @@ def test_the_option_ignores_a_scanner_and_keeps_its_count(tmp_path, fake_hf):
         "reason": "Several questions share one passage by design.",
         "findings": 1,
     }
-    assert _summary(out)["ignore_file"] == str(ignore)
+    assert _summary(out)["ignore_file"] == str(ignore.resolve())
     assert not (out / "duplicate_questions.json").exists()
     assert "Using ignore file" in result.output
 
@@ -87,7 +87,7 @@ def test_a_malformed_file_stops_the_scan_before_loading(tmp_path, monkeypatch):
     ignore.write_text("ignore:\n  - scanner: duplicate_questions\n")
     result = CliRunner().invoke(cli, [*HF, "--ignore-file", str(ignore)])
     assert result.exit_code == 2
-    assert str(ignore) in result.output
+    assert str(ignore.resolve()) in result.output
     assert "reason" in result.output
 
 
@@ -137,7 +137,7 @@ def test_task_mode_uses_the_file_beside_the_task(tmp_path, fake_task, monkeypatc
     result = CliRunner().invoke(cli, [*TASK, "-o", str(out)])
     assert result.exit_code == 0, result.output
     assert _summary(out)["scanner_status"]["duplicate_questions"]["status"] == "ignored"
-    assert _summary(out)["ignore_file"] == str(ignore)
+    assert _summary(out)["ignore_file"] == str(ignore.resolve())
 
 
 def test_the_option_wins_over_the_file_beside_the_task(tmp_path, fake_task, monkeypatch):
@@ -150,7 +150,7 @@ def test_the_option_wins_over_the_file_beside_the_task(tmp_path, fake_task, monk
     result = CliRunner().invoke(cli, [*TASK, "--ignore-file", str(given), "-o", str(out)])
     assert result.exit_code == 0, result.output
     assert _summary(out)["scanner_status"]["duplicate_questions"] == {"status": "ran"}
-    assert _summary(out)["ignore_file"] == str(given)
+    assert _summary(out)["ignore_file"] == str(given.resolve())
 
 
 def test_no_ignore_file_reads_no_file_beside_the_task(
@@ -171,3 +171,16 @@ def test_no_ignore_file_with_ignore_file_is_a_usage_error(tmp_path: Path, fake_h
     result = CliRunner().invoke(cli, [*HF, "--ignore-file", str(ignore), "--no-ignore-file"])
     assert result.exit_code == 2
     assert "--ignore-file and --no-ignore-file cannot be used together" in result.output
+
+
+def test_a_relative_ignore_file_is_stored_as_an_absolute_path(
+    tmp_path: Path, fake_hf: None, monkeypatch: pytest.MonkeyPatch
+):
+    (tmp_path / "ignore.yaml").write_text(GOOD)
+    monkeypatch.chdir(tmp_path)
+    out = tmp_path / "out"
+    result = CliRunner().invoke(cli, [*HF, "--ignore-file", "ignore.yaml", "-o", str(out)])
+    assert result.exit_code == 0, result.output
+    stored = Path(_summary(out)["ignore_file"])
+    assert stored.is_absolute()
+    assert stored == (tmp_path / "ignore.yaml").resolve()
