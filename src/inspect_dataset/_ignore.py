@@ -35,20 +35,50 @@ class IgnoreFileError(ValueError):
     """The ignore file could not be parsed or does not follow the expected layout."""
 
 
+class _RepeatedKeyError(yaml.constructor.ConstructorError):
+    def __init__(self, key: object, node: yaml.Node) -> None:
+        super().__init__(problem=f"repeated key {key!r}", problem_mark=node.start_mark)
+        self.key = key
+        self.line = node.start_mark.line + 1
+
+
+class _UniqueKeyLoader(yaml.SafeLoader):
+    """A safe loader that raises ``_RepeatedKeyError`` when a mapping repeats a key."""
+
+    def construct_mapping(self, node: yaml.MappingNode, deep: bool = False) -> dict[Any, Any]:
+        seen: set[object] = set()
+        for key_node, _ in node.value:
+            # A merge key (<<) may override keys by design, and a non-scalar key is left to
+            # the parent class, which rejects one that cannot be hashed.
+            if (
+                not isinstance(key_node, yaml.ScalarNode)
+                or key_node.tag == "tag:yaml.org,2002:merge"
+            ):
+                continue
+            key = self.construct_object(key_node, deep=deep)
+            if key in seen:
+                raise _RepeatedKeyError(key, key_node)
+            seen.add(key)
+        return super().construct_mapping(node, deep=deep)
+
+
 def load_ignore_file(path: Path) -> dict[str, str]:
     """Read an ignore file and return a mapping from scanner name to reason.
 
     The file is read as UTF-8. An empty file, or a mapping without ``ignore``, gives an empty
-    mapping.
+    mapping. Surrounding whitespace is stripped from each scanner name and reason, and a reason
+    that still contains a line break is an error.
 
     Raises:
         IgnoreFileError: If the file cannot be opened, is not UTF-8 text, is not valid YAML or
-            does not follow the expected layout. For a layout error the message names the
-            position of the entry at fault, such as ``ignore[1]``.
+            does not follow the expected layout, or if a mapping repeats a key. For a layout
+            error the message names the position of the entry at fault, such as ``ignore[1]``.
     """
     try:
         with path.open(encoding="utf-8") as f:
-            data: Any = yaml.safe_load(f)
+            data: Any = yaml.load(f, Loader=_UniqueKeyLoader)
+    except _RepeatedKeyError as e:
+        raise IgnoreFileError(f"the key {e.key!r} is repeated on line {e.line}") from e
     except OSError as e:
         raise IgnoreFileError(f"the file could not be opened: {e}") from e
     except UnicodeDecodeError as e:
@@ -91,6 +121,8 @@ def load_ignore_file(path: Path) -> dict[str, str]:
             if not value.strip():
                 raise IgnoreFileError(f"{where}: {key} must not be blank")
             values[key] = value.strip()
+        if "\n" in values["reason"] or "\r" in values["reason"]:
+            raise IgnoreFileError(f"{where}: reason must be one line")
         scanner = values["scanner"]
         if scanner in ignores:
             raise IgnoreFileError(f"{where}: scanner {scanner!r} is listed more than once")

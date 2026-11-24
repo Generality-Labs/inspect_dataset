@@ -68,6 +68,11 @@ def test_an_empty_file_ignores_nothing(tmp_path: Path, text: str):
         "ignore:\n  - scanner: 3\n    reason: r\n",  # scanner is not a string
         "ignore:\n  - scanner: a\n    reason: No\n",  # reason is read as a boolean
         "ignore:\n  - scanner: '  '\n    reason: r\n",  # blank scanner
+        "ignore:\n  - scanner: a\n    scanner: b\n    reason: r\n",  # repeated entry key
+        # repeated top-level key
+        "ignore:\n  - scanner: a\n    reason: r\nignore:\n  - scanner: b\n    reason: r\n",
+        "ignore:\n  - scanner: a\n    reason: |\n      line one\n      line two\n",  # two lines
+        'ignore:\n  - scanner: a\n    reason: "one\\rtwo"\n',  # carriage return
     ],
 )
 def test_a_malformed_file_is_an_error(tmp_path: Path, text: str):
@@ -93,6 +98,38 @@ def test_a_missing_reason_names_the_entry(tmp_path: Path):
     text = "ignore:\n  - scanner: a\n    reason: r\n  - scanner: b\n"
     with pytest.raises(IgnoreFileError, match=r"ignore\[1\]"):
         load_ignore_file(_write(tmp_path, text))
+
+
+@pytest.mark.parametrize(
+    ("text", "key"),
+    [
+        ("ignore:\n  - scanner: a\n    scanner: b\n    reason: r\n", "scanner"),
+        (
+            "ignore:\n  - scanner: a\n    reason: r\nignore:\n  - scanner: b\n    reason: r\n",
+            "ignore",
+        ),
+    ],
+)
+def test_a_repeated_key_is_named(tmp_path: Path, text: str, key: str):
+    with pytest.raises(IgnoreFileError, match=f"'{key}'"):
+        load_ignore_file(_write(tmp_path, text))
+
+
+def test_a_reason_with_a_line_break_names_the_entry(tmp_path: Path):
+    text = (
+        "ignore:\n  - scanner: a\n    reason: r\n"
+        "  - scanner: b\n    reason: |\n      line one\n      line two\n"
+    )
+    with pytest.raises(IgnoreFileError, match=r"ignore\[1\]: reason"):
+        load_ignore_file(_write(tmp_path, text))
+
+
+def test_a_folded_reason_on_one_line_loads_stripped(tmp_path: Path):
+    text = (
+        "ignore:\n  - scanner: a\n    reason: >\n"
+        "      Several questions\n      share one passage.\n"
+    )
+    assert load_ignore_file(_write(tmp_path, text)) == {"a": "Several questions share one passage."}
 
 
 def _run() -> ScanRun:
