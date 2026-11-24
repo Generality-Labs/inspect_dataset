@@ -89,6 +89,7 @@ def test_scalar_answer_column_still_fires_and_is_marked_ran(tmp_path: Path):
         "explanation",
         "sample_index",
         "sample_id",
+        "sample_ids",
         "line",
         "metadata",
     }
