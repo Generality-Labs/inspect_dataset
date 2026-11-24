@@ -85,8 +85,9 @@ class ScanRun:
     config: str | None = None  # HF config/subset name (multi-config datasets)
     group_by: str | None = None  # FieldMap.group the population scanners grouped by
     group_by_source: str | None = None  # how group_by was chosen: "option" | "auto" | None
-    # scanner name → {"status": "ran"} or {"status": "not_applicable", "reason": ...}
-    scanner_status: dict[str, dict[str, str]] = field(default_factory=dict)
+    # scanner name → {"status": "ran"}, {"status": "not_applicable", "reason": ...} or
+    # {"status": "ignored", "reason": ..., "findings": <number of findings left out>}
+    scanner_status: dict[str, dict[str, Any]] = field(default_factory=dict)
     task: str | None = None  # task spec as given on the command line (task mode)
     scorers: list[str] | None = None  # the task's scorer registry names (task mode)
     # HF mode: whether split/config were filled in rather than given. None for other sources.
@@ -94,6 +95,8 @@ class ScanRun:
     config_defaulted: bool | None = None
     # Task mode: how records were joined to their raw rows (SourceInfo.to_summary()).
     source: dict[str, Any] | None = None
+    # Path of the ignore file applied to this run, or None when no file was applied.
+    ignore_file: str | None = None
 
     def by_scanner(self) -> dict[str, list[Finding]]:
         result: dict[str, list[Finding]] = {}

@@ -10,25 +10,11 @@ import json
 import sys
 from pathlib import Path
 
-import pytest
 from click.testing import CliRunner
 
 import inspect_dataset.cli as cli_mod
 from inspect_dataset.cli import cli
 from inspect_dataset.loader import is_task_spec
-
-
-@pytest.fixture
-def fake_packages(tmp_path: Path, monkeypatch):
-    """Put tmp_path on sys.path and forget any modules imported from it."""
-    before = set(sys.modules)
-    monkeypatch.syspath_prepend(str(tmp_path))
-    yield tmp_path
-    for name in set(sys.modules) - before:
-        module = sys.modules[name]
-        locations = [str(getattr(module, "__file__", None)), *getattr(module, "__path__", [])]
-        if any(str(tmp_path) in loc for loc in locations):
-            del sys.modules[name]
 
 
 def _no_registry(monkeypatch):

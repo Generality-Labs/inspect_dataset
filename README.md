@@ -64,6 +64,12 @@ inspect-dataset scan flaviagiammarino/vqa-rad \
   --model openai/gpt-4o-mini \
   --scanners label_correctness,ambiguity
 
+# Leave out the findings of scanners that an eval's ignore file turns off
+inspect-dataset scan inspect_evals/drop --ignore-file path/to/drop/.inspect-dataset.yaml
+
+# Read no ignore file, including the one beside the task's source
+inspect-dataset scan inspect_evals/drop --no-ignore-file
+
 # View a saved report
 inspect-dataset report findings/
 
@@ -183,6 +189,29 @@ The names are `"answer"` (at least one row has a non-empty answer), `"image"` (a
 `scan_summary.json` records where the findings came from. `version` is the inspect-dataset version that ran the scan. When the dataset is an inspect_ai task, `task` is the task spec as given on the command line and `scorers` lists the registry names of the task's scorers, such as `["inspect_ai/choice"]`. A task with no scorer has `[]`, and scorers that are not inspect_ai registry objects are left out. Both are `null` for HuggingFace and local scans.
 
 `scan_summary.json` records the `split` and `config` that were scanned. For a HuggingFace dataset these are filled in when not given: the only split, or `train` when there are several, and the only config or the dataset's default one. `split_defaulted` and `config_defaulted` say whether each was filled in (`true`) or given (`false`). Both are `null` for task and local scans. When the dataset has several splits and none is `train`, or several configs and no default, the scan stops and lists the choices.
+
+## Ignoring a scanner for one eval
+
+Some findings are expected for an eval. For example, DROP asks several questions about one passage, so `duplicate_questions` reports many of its samples. An eval's folder can hold a file named `.inspect-dataset.yaml` that turns such a scanner off for that eval:
+
+```yaml
+ignore:
+  - scanner: duplicate_questions
+    reason: Several questions share one passage by design.
+```
+
+The file has one top-level key, `ignore`, which is a list of entries. Each entry has a `scanner` and a `reason`, and the reason is required. The reason must be one line. Whitespace around the reason is removed first, so a folded block (`reason: >`) that ends in a newline is accepted, and a literal block (`reason: |`) with two lines is an error. An entry applies to the whole eval. There are no entries for one task or one sample.
+
+`--ignore-file PATH` names the file to use. When a task is scanned and `--ignore-file` is absent, inspect-dataset looks for `.inspect-dataset.yaml` in the folder that holds the task's source file. It looks nowhere else, so parent folders and the current directory are not searched. A HuggingFace dataset or a local directory uses an ignore file only when `--ignore-file` is given. The scan prints `Using ignore file <path>` when it uses one. `--no-ignore-file` turns the ignore file off, so the scan reads no file and every scanner that runs keeps its findings. `--ignore-file` and `--no-ignore-file` cannot be given together.
+
+An ignored scanner still runs. Its findings are left out of the terminal report, `REPORT.md` and the per-scanner JSON files. In `scan_summary.json`, its `scanner_status` entry is `{"status": "ignored", "reason": "...", "findings": 12}`, where `findings` is the number of findings that were left out. These findings are also left out of `total_findings`, `by_scanner` and `by_severity` in `scan_summary.json`. An entry for a scanner that did not run in this scan, such as one not selected with `--scanners` or one that needs a model when no model is given, records nothing. The terminal report has a line `Ignored: <scanner>, <n> finding(s) (<reason>)` for each ignored scanner, and `REPORT.md` lists them under `## Ignored`. A scanner that is `not_applicable` for the dataset keeps that status, and the report does not list it as ignored. `scan_summary.json` has an `ignore_file` key with the absolute path of the file that was used, or `null` when no file was used. A relative `--ignore-file` path is resolved against the current directory, and the `Using ignore file` line shows the same absolute path.
+
+The file is read as UTF-8. A file that cannot be read, or that does not follow this layout, stops the scan before the dataset is loaded, with a usage error that names the file. This covers a file that is not UTF-8 text or is not valid YAML, a missing or blank reason, a reason of more than one line, an entry without `scanner`, an unknown key, a key repeated in one mapping, a scanner listed twice, and a top level that is not a mapping.
+
+There are two limits:
+
+- The file is found beside a task's source only when the task's package is a source checkout that contains the file. A package installed from a wheel has no `.inspect-dataset.yaml` in it unless the package ships the file, so pass `--ignore-file` in that case.
+- An entry that names a scanner this installation does not have, such as a plugin scanner whose module is not loaded or a misspelt name, gives a warning that names the file and the scanner. The scan continues, and the entry has no effect.
 
 ## inspect_ai tasks
 

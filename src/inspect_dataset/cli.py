@@ -8,7 +8,14 @@ from pathlib import Path
 import click
 from dotenv import load_dotenv
 from rich.console import Console
+from rich.markup import escape
 
+from inspect_dataset._ignore import (
+    IgnoreFileError,
+    apply_ignores,
+    find_ignore_file,
+    load_ignore_file,
+)
 from inspect_dataset._source import SOURCE_FIELD, SourceInfo
 from inspect_dataset._types import Record
 from inspect_dataset.loader import (
@@ -229,6 +236,22 @@ def cli() -> None:
         "text_layer_recall and numeric_provenance."
     ),
 )
+@click.option(
+    "--ignore-file",
+    default=None,
+    type=click.Path(exists=True, dir_okay=False),
+    help=(
+        "A .inspect-dataset.yaml file listing scanners to ignore for this eval, each with a "
+        "reason. In task mode the file beside the task's source is used when this option "
+        "is absent. To read no ignore file, use the option --no-ignore-file."
+    ),
+)
+@click.option(
+    "--no-ignore-file",
+    is_flag=True,
+    default=False,
+    help="Read no ignore file, including the file beside a task's source.",
+)
 @click.option("--limit", default=None, type=int, help="Cap number of samples loaded.")
 @click.option(
     "-o",
@@ -257,6 +280,8 @@ def scan(
     model: str | None,
     max_answer_words: int,
     files_root: str | None,
+    ignore_file: str | None,
+    no_ignore_file: bool,
     limit: int | None,
     output_dir: str | None,
 ) -> None:
@@ -275,6 +300,8 @@ def scan(
 
     if group_by is not None and no_group_by:
         raise click.UsageError("--group-by and --no-group-by cannot be used together.")
+    if ignore_file is not None and no_ignore_file:
+        raise click.UsageError("--ignore-file and --no-ignore-file cannot be used together.")
 
     # Plugin scanners from --scanner-module
     plugin_scanners: list[ScannerDef] = []
@@ -332,6 +359,29 @@ def scan(
     split_defaulted: bool | None = None
     config_defaulted: bool | None = None
     source_info: SourceInfo | None = None
+
+    # The ignore file is read before loading, so a malformed file stops the scan early.
+    # Only a task has a source folder to look in when --ignore-file is absent.
+    ignore_path: Path | None = None
+    if ignore_file is not None:
+        ignore_path = Path(ignore_file)
+    elif is_task and not no_ignore_file:
+        ignore_path = find_ignore_file(dataset)
+    ignores: dict[str, str] = {}
+    if ignore_path is not None:
+        ignore_path = ignore_path.resolve()
+        try:
+            ignores = load_ignore_file(ignore_path)
+        except IgnoreFileError as e:
+            raise click.UsageError(f"{ignore_path}: {e}") from None
+        console.print(f"Using ignore file [bold]{escape(str(ignore_path))}[/bold]")
+        for name in ignores:
+            if name not in available_names:
+                click.echo(
+                    f"Warning: {ignore_path} names unknown scanner {name!r}; "
+                    "the entry has no effect.",
+                    err=True,
+                )
 
     if is_local:
         dataset = str(Path(dataset).resolve())
@@ -473,6 +523,9 @@ def scan(
     run.split_defaulted = split_defaulted
     run.config_defaulted = config_defaulted
     run.source = source_info.to_summary() if source_info is not None else None
+    if ignore_path is not None:
+        apply_ignores(run, ignores)
+        run.ignore_file = str(ignore_path)
 
     print_report(run, console=console)
 
