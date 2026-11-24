@@ -243,8 +243,14 @@ def cli() -> None:
     help=(
         "A .inspect-dataset.yaml file listing scanners to ignore for this eval, each with a "
         "reason. In task mode the file beside the task's source is used when this option "
-        "is absent."
+        "is absent. Use --no-ignore-file to read no ignore file."
     ),
+)
+@click.option(
+    "--no-ignore-file",
+    is_flag=True,
+    default=False,
+    help="Read no ignore file, including the file beside a task's source.",
 )
 @click.option("--limit", default=None, type=int, help="Cap number of samples loaded.")
 @click.option(
@@ -275,6 +281,7 @@ def scan(
     max_answer_words: int,
     files_root: str | None,
     ignore_file: str | None,
+    no_ignore_file: bool,
     limit: int | None,
     output_dir: str | None,
 ) -> None:
@@ -293,6 +300,8 @@ def scan(
 
     if group_by is not None and no_group_by:
         raise click.UsageError("--group-by and --no-group-by cannot be used together.")
+    if ignore_file is not None and no_ignore_file:
+        raise click.UsageError("--ignore-file and --no-ignore-file cannot be used together.")
 
     # Plugin scanners from --scanner-module
     plugin_scanners: list[ScannerDef] = []
@@ -356,7 +365,7 @@ def scan(
     ignore_path: Path | None = None
     if ignore_file is not None:
         ignore_path = Path(ignore_file)
-    elif is_task:
+    elif is_task and not no_ignore_file:
         ignore_path = find_ignore_file(dataset)
     ignores: dict[str, str] = {}
     if ignore_path is not None:

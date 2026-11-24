@@ -151,3 +151,23 @@ def test_the_option_wins_over_the_file_beside_the_task(tmp_path, fake_task, monk
     assert result.exit_code == 0, result.output
     assert _summary(out)["scanner_status"]["duplicate_questions"] == {"status": "ran"}
     assert _summary(out)["ignore_file"] == str(given)
+
+
+def test_no_ignore_file_reads_no_file_beside_the_task(
+    tmp_path: Path, fake_task: None, no_find: None
+):
+    (tmp_path / ".inspect-dataset.yaml").write_text(GOOD)
+    out = tmp_path / "out"
+    result = CliRunner().invoke(cli, [*TASK, "--no-ignore-file", "-o", str(out)])
+    assert result.exit_code == 0, result.output
+    assert _summary(out)["scanner_status"]["duplicate_questions"] == {"status": "ran"}
+    assert _summary(out)["ignore_file"] is None
+    assert "Using ignore file" not in result.output
+
+
+def test_no_ignore_file_with_ignore_file_is_a_usage_error(tmp_path: Path, fake_hf: None):
+    ignore = tmp_path / "ignore.yaml"
+    ignore.write_text(GOOD)
+    result = CliRunner().invoke(cli, [*HF, "--ignore-file", str(ignore), "--no-ignore-file"])
+    assert result.exit_code == 2
+    assert "--ignore-file and --no-ignore-file cannot be used together" in result.output

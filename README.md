@@ -67,6 +67,9 @@ inspect-dataset scan flaviagiammarino/vqa-rad \
 # Leave out the findings of scanners that an eval's ignore file turns off
 inspect-dataset scan inspect_evals/drop --ignore-file path/to/drop/.inspect-dataset.yaml
 
+# Read no ignore file, including the one beside the task's source
+inspect-dataset scan inspect_evals/drop --no-ignore-file
+
 # View a saved report
 inspect-dataset report findings/
 
@@ -199,7 +202,7 @@ ignore:
 
 The file has one top-level key, `ignore`, which is a list of entries. Each entry has a `scanner` and a `reason`, and the reason is required. An entry applies to the whole eval. There are no entries for one task or one sample.
 
-`--ignore-file PATH` names the file to use. When a task is scanned and `--ignore-file` is absent, inspect-dataset looks for `.inspect-dataset.yaml` in the folder that holds the task's source file. It looks nowhere else, so parent folders and the current directory are not searched. A HuggingFace dataset or a local directory uses an ignore file only when `--ignore-file` is given. The scan prints `Using ignore file <path>` when it uses one.
+`--ignore-file PATH` names the file to use. When a task is scanned and `--ignore-file` is absent, inspect-dataset looks for `.inspect-dataset.yaml` in the folder that holds the task's source file. It looks nowhere else, so parent folders and the current directory are not searched. A HuggingFace dataset or a local directory uses an ignore file only when `--ignore-file` is given. The scan prints `Using ignore file <path>` when it uses one. `--no-ignore-file` turns the ignore file off, so the scan reads no file and every scanner that runs keeps its findings. `--ignore-file` and `--no-ignore-file` cannot be given together.
 
 An ignored scanner still runs. Its findings are left out of the terminal report, `REPORT.md` and the per-scanner JSON files. In `scan_summary.json`, its `scanner_status` entry is `{"status": "ignored", "reason": "...", "findings": 12}`, where `findings` is the number of findings that were left out. These findings are also left out of `total_findings`, `by_scanner` and `by_severity` in `scan_summary.json`. An entry for a scanner that did not run in this scan, such as one not selected with `--scanners` or one that needs a model when no model is given, records nothing. The terminal report has a line `Ignored: <scanner>, <n> finding(s) (<reason>)` for each ignored scanner, and `REPORT.md` lists them under `## Ignored`. A scanner that is `not_applicable` for the dataset keeps that status, and the report does not list it as ignored. `scan_summary.json` has an `ignore_file` key with the path of the file that was used, or `null` when no file was used.
 
