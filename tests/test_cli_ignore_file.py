@@ -63,6 +63,9 @@ def test_the_option_ignores_a_scanner_and_keeps_its_count(tmp_path, fake_hf):
         "findings": 1,
     }
     assert _summary(out)["ignore_file"] == str(ignore.resolve())
+    assert _summary(out)["total_findings"] == 0
+    assert _summary(out)["by_scanner"] == {}
+    assert _summary(out)["by_severity"] == {}
     assert not (out / "duplicate_questions.json").exists()
     assert "Using ignore file" in result.output
 
